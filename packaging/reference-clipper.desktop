@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Reference Clipper
+GenericName=Video Clipper
+Comment=Mark spans in a video and encode them to one AV1/AAC MP4
+Exec=reference-clipper %f
+Icon=reference-clipper
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;
+MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;
