@@ -50,9 +50,10 @@ stage="$root/dist/$name"
 rm -rf "$stage"
 mkdir -p "$stage/licenses"
 cp "$build/reference-clipper.exe" "$stage/"
-windeployqt --release --no-translations --dir "$stage" "$stage/reference-clipper.exe"
+# Its compiler-runtime step is on by default for MinGW and fails for llvm-mingw.
+windeployqt --release --no-translations --no-compiler-runtime --verbose 1 --dir "$stage" "$stage/reference-clipper.exe"
 cp "$ffmpeg_lgpl"/bin/*.dll "$stage/"
-# windeployqt only deploys the compiler runtime for MSVC and g++, not llvm-mingw.
+# So the compiler runtime comes from the toolchain directly.
 # The x86_64 target's copies; the import check below catches any that are missing.
 for dll in libc++.dll libunwind.dll libwinpthread-1.dll; do
     for candidate in "$toolchain/x86_64-w64-mingw32/bin/$dll" "$toolchain/bin/$dll"; do
