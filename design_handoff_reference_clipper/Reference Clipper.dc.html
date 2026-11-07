@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="industry.css"><style>
+body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)}
+a{color:var(--color-accent)}a:hover{color:var(--color-accent-700)}
+.rc-dark{--color-bg:#1b1d1f;--color-surface:#25282b;--color-text:#e4e6e8;--color-accent:#7fa6cf;--color-accent-600:#94bce3;--color-accent-700:#b5d9fd;--color-accent-100:#243a50;--color-accent-800:#cfe5fb;--color-neutral-100:#2f3235;--color-neutral-800:#d4d4d7;--color-divider:color-mix(in srgb,#e4e6e8 18%,transparent);--shadow-lg:0 12px 32px rgba(0,0,0,.6);--shadow-md:0 3px 10px rgba(0,0,0,.5)}
+@media (prefers-color-scheme:dark){.rc-system{--color-bg:#1b1d1f;--color-surface:#25282b;--color-text:#e4e6e8;--color-accent:#7fa6cf;--color-accent-600:#94bce3;--color-accent-700:#b5d9fd;--color-accent-100:#243a50;--color-accent-800:#cfe5fb;--color-neutral-100:#2f3235;--color-neutral-800:#d4d4d7;--color-divider:color-mix(in srgb,#e4e6e8 18%,transparent);--shadow-lg:0 12px 32px rgba(0,0,0,.6);--shadow-md:0 3px 10px rgba(0,0,0,.5)}}
+input[type=range].rc-range{-webkit-appearance:none;appearance:none;width:100%;height:2px;background:var(--color-divider);outline:none;margin:10px 0}
+input[type=range].rc-range::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:var(--color-accent);border:1px solid var(--color-bg);border-radius:0;cursor:pointer}
+input[type=range].rc-range::-moz-range-thumb{width:14px;height:14px;background:var(--color-accent);border:1px solid var(--color-bg);border-radius:0;cursor:pointer}
+@keyframes rc-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style></helmet>
+<div class="rc-{{ themeAttr }}" style="background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);height:100vh;min-width:1100px;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;font-size:13px;position:relative;overflow:auto">
+
+  <!-- menubar -->
+  <div style="grid-row:1;display:flex;align-items:center;gap:2px;padding:2px 8px;border-bottom:1px solid var(--color-divider);font-size:13px;position:relative;z-index:30">
+    <span style="font-family:var(--font-heading);font-weight:600;font-size:15px;letter-spacing:.02em;margin-right:12px;white-space:nowrap">REFERENCE CLIPPER</span>
+    <button onClick="{{ toggleFileMenu }}" style="font:inherit;background:transparent;border:0;color:inherit;padding:4px 9px;cursor:pointer" style-hover="background:color-mix(in srgb,var(--color-text) 8%,transparent)">File</button>
+    <button style="font:inherit;background:transparent;border:0;color:inherit;padding:4px 9px;cursor:pointer" style-hover="background:color-mix(in srgb,var(--color-text) 8%,transparent)">Edit</button>
+    <button style="font:inherit;background:transparent;border:0;color:inherit;padding:4px 9px;cursor:pointer" style-hover="background:color-mix(in srgb,var(--color-text) 8%,transparent)">View</button>
+    <button style="font:inherit;background:transparent;border:0;color:inherit;padding:4px 9px;cursor:pointer" style-hover="background:color-mix(in srgb,var(--color-text) 8%,transparent)">Help</button>
+    <sc-if value="{{ fileMenuOpen }}" hint-placeholder-val="{{ false }}">
+      <div class="blueprint" style="position:absolute;top:100%;left:158px;min-width:260px;background:var(--color-bg);box-shadow:var(--shadow-lg);padding:4px 0;z-index:40">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <button onClick="{{ openDialog }}" style="display:flex;justify-content:space-between;width:100%;font:inherit;background:transparent;border:0;color:inherit;padding:6px 14px;cursor:pointer;text-align:left" style-hover="background:var(--color-accent-100)"><span>Open…</span><span style="opacity:.5">Ctrl+O</span></button>
+        <div style="padding:6px 14px 2px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Open recent</div>
+        <sc-for list="{{ recentFiles }}" as="f" hint-placeholder-count="3">
+          <button onClick="{{ f.open }}" style="display:block;width:100%;font:inherit;background:transparent;border:0;color:inherit;padding:5px 14px;cursor:pointer;text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:12px" style-hover="background:var(--color-accent-100)">{{ f.name }}</button>
+        </sc-for>
+        <div style="height:1px;background:var(--color-divider);margin:4px 0"></div>
+        <button onClick="{{ closeClip }}" style="display:flex;justify-content:space-between;width:100%;font:inherit;background:transparent;border:0;color:inherit;padding:6px 14px;cursor:pointer;text-align:left" style-hover="background:var(--color-accent-100)"><span>Close clip</span><span style="opacity:.5">Ctrl+W</span></button>
+        <button style="display:flex;justify-content:space-between;width:100%;font:inherit;background:transparent;border:0;color:inherit;padding:6px 14px;cursor:pointer;text-align:left" style-hover="background:var(--color-accent-100)"><span>Quit</span><span style="opacity:.5">Ctrl+Q</span></button>
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- toolbar -->
+  <div style="grid-row:2;display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--color-divider)">
+    <button class="btn btn-secondary" onClick="{{ openDialog }}" style="font-size:13px;padding:5px 10px;white-space:nowrap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path></svg>Open</button>
+    <sc-if value="{{ hasClip }}" hint-placeholder-val="{{ true }}">
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;padding-left:6px">{{ clipName }}</span>
+      <span style="font-size:12px;opacity:.6;white-space:nowrap">{{ clipMeta }}</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-primary blueprint" onClick="{{ encode }}" style="font-size:13px;padding:5px 14px;white-space:nowrap"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>Encode AV1 / AAC</button>
+    </sc-if>
+  </div>
+
+  <!-- main -->
+  <sc-if value="{{ hasClip }}" hint-placeholder-val="{{ true }}">
+  <div style="grid-row:3;display:grid;gap:14px;padding:14px;min-height:0;grid-template-columns:{{ gridCols }};grid-template-rows:{{ gridRows }};grid-template-areas:{{ gridAreas }}">
+
+    <!-- PREVIEW -->
+    <div class="blueprint" style="grid-area:preview;display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--color-divider)">
+        <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Preview</span>
+        <span style="font-size:11px;opacity:.6">input · output side by side</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;opacity:.7">Audio</span>
+        <div class="seg" style="font-size:11px">
+          <label class="seg-opt" style="padding:2px 8px;white-space:nowrap"><input type="radio" name="aud" checked="{{ audIsInput }}" onChange="{{ setAudInput }}">Input</label>
+          <label class="seg-opt" style="padding:2px 8px;white-space:nowrap"><input type="radio" name="aud" checked="{{ audIsOutput }}" onChange="{{ setAudOutput }}">Output</label>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:minmax(0,1fr);gap:12px;align-items:center;padding:12px;min-height:0;overflow:hidden;background:var(--color-surface)">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0;height:100%;min-height:0">
+          <div style="display:flex;gap:8px;font-size:11px;max-width:100%"><span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.7">Input</span><span style="font-family:ui-monospace,Menlo,monospace;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ clipName }} · {{ inDims }}</span></div>
+          <div style="flex:1 1 0;min-height:0;width:100%;container-type:size;display:grid;place-items:center"><div style="aspect-ratio:16/9;width:min(100%, calc(100cqh * 16 / 9));position:relative;background:{{ previewBg }};outline:1px solid var(--color-divider);display:grid;place-items:center;overflow:hidden">
+            <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#fff;background:rgba(0,0,0,.55);padding:3px 8px">seek @ {{ playheadTc }}</span>
+          </div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0;height:100%;min-height:0">
+          <div style="display:flex;gap:8px;font-size:11px;max-width:100%"><span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.7">Output</span><span style="font-family:ui-monospace,Menlo,monospace;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ outLabel }}</span></div>
+          <div style="flex:1 1 0;min-height:0;width:100%;container-type:size;display:grid;place-items:center"><div style="aspect-ratio:16/9;width:min(100%, calc(100cqh * 16 / 9));position:relative;background:{{ outBg }};outline:1px solid var(--color-divider);display:grid;place-items:center;overflow:hidden">
+            <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#fff;background:rgba(0,0,0,.55);padding:3px 8px">{{ outFrameLabel }}</span>
+            <sc-if value="{{ outDecoded }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute;top:8px;right:8px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#fff;background:var(--color-accent-700);padding:2px 7px">decoded av1</span>
+            </sc-if>
+          </div></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid var(--color-divider)">
+        <button class="btn btn-secondary btn-icon" onClick="{{ goStart }}" title="Start" style="width:30px;height:30px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20 9 12l9-8z"></path><path d="M5 19V5"></path></svg></button>
+        <button class="btn btn-secondary btn-icon" onClick="{{ stepBack }}" title="Previous frame (←)" style="width:30px;height:30px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg></button>
+        <button class="btn btn-primary" onClick="{{ togglePlay }}" style="min-width:110px;height:30px;padding:0 12px">{{ playLabel }}</button>
+        <button class="btn btn-secondary btn-icon" onClick="{{ stepFwd }}" title="Next frame (→)" style="width:30px;height:30px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></button>
+        <span style="font-family:ui-monospace,Menlo,monospace;font-size:14px;margin-left:10px">{{ playheadTc }}</span>
+        <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;opacity:.5">/ {{ timelineEndTc }}</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;opacity:.6">Space play · I/O set in/out · ←/→ frame · Del remove span</span>
+      </div>
+    </div>
+
+    <!-- TIMELINE -->
+    <div class="blueprint" style="grid-area:timeline;display:grid;grid-template-columns:minmax(0,1fr);min-height:0">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;min-width:0">
+        <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--color-divider)">
+          <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Source timeline</span>
+          <span style="font-size:11px;opacity:.6">drag edges to trim · drag body to move · click to seek</span>
+          <span style="flex:1"></span>
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;opacity:.6">{{ spansCount }} · {{ totalOutTc }}</span>
+          <button class="btn btn-secondary" onClick="{{ addSpan }}" style="font-size:12px;padding:3px 8px">+ Span</button>
+          <button class="btn btn-secondary" onClick="{{ setIn }}" style="font-size:12px;padding:3px 8px" title="Set in point at playhead (I)">I</button>
+          <button class="btn btn-secondary" onClick="{{ setOut }}" style="font-size:12px;padding:3px 8px" title="Set out point at playhead (O)">O</button>
+          <button class="btn btn-secondary" onClick="{{ removeSel }}" disabled="{{ noSel }}" style="font-size:12px;padding:3px 8px" title="Remove selected span (Del)">✕</button>
+        </div>
+        <div ref="{{ tlRef }}" onPointerDown="{{ tlDown }}" onPointerMove="{{ tlMove }}" onPointerUp="{{ tlUp }}" style="position:relative;margin:10px 14px 18px;user-select:none;touch-action:none;cursor:crosshair;min-height:120px;padding-top:14px">
+          <!-- ruler -->
+          <div style="position:absolute;left:0;right:0;top:0;height:14px;font-family:ui-monospace,Menlo,monospace;font-size:9px;opacity:.55">
+            <sc-for list="{{ ticks }}" as="t" hint-placeholder-count="6"><span style="position:absolute;left:{{ t.left }}%;top:0;border-left:1px solid currentColor;padding-left:3px;line-height:14px">{{ t.label }}</span></sc-for>
+          </div>
+          <!-- filmstrip -->
+          <div style="position:absolute;left:0;right:0;top:32px;height:44px;display:flex;overflow:hidden;outline:1px solid var(--color-divider)">
+            <sc-for list="{{ frames }}" as="f" hint-placeholder-count="16"><div style="flex:1;background:{{ f.bg }};border-right:1px solid rgba(0,0,0,.25)"></div></sc-for>
+          </div>
+          <!-- waveform -->
+          <div style="position:absolute;left:0;right:0;top:80px;height:26px;display:flex;align-items:center;gap:1px;outline:1px solid var(--color-divider)">
+            <sc-for list="{{ waveBars }}" as="w" hint-placeholder-count="80"><div style="flex:1;height:{{ w.h }}%;background:var(--color-accent-500)"></div></sc-for>
+          </div>
+          <!-- spans -->
+          <sc-for list="{{ spanItems }}" as="s" hint-placeholder-count="2">
+            <div onPointerDown="{{ s.downBody }}" style="position:absolute;top:30px;height:76px;left:{{ s.left }}%;width:{{ s.width }}%;border:{{ s.border }};background:color-mix(in srgb,var(--color-accent) 18%,transparent);cursor:grab;box-sizing:border-box">
+              <span style="position:absolute;left:0;top:-15px;font-family:var(--font-heading);font-weight:600;font-size:12px;color:var(--color-accent);background:var(--color-bg);padding:0 4px;line-height:14px;white-space:nowrap">{{ s.n }} · {{ s.durTc }}</span>
+                <div onPointerDown="{{ s.downL }}" style="position:absolute;left:-5px;top:0;bottom:0;width:10px;cursor:ew-resize;display:grid;place-items:center"><div style="width:4px;height:26px;background:var(--color-accent);border:1px solid var(--color-bg)"></div></div>
+                <div onPointerDown="{{ s.downR }}" style="position:absolute;right:-5px;top:0;bottom:0;width:10px;cursor:ew-resize;display:grid;place-items:center"><div style="width:4px;height:26px;background:var(--color-accent);border:1px solid var(--color-bg)"></div></div>
+            </div>
+          </sc-for>
+          <!-- playhead -->
+          <div style="position:absolute;top:0;bottom:0;left:{{ playheadLeft }}%;width:0;border-left:2px solid var(--color-text);pointer-events:none">
+            <div style="position:absolute;top:-2px;left:-6px;border:5px solid transparent;border-top:7px solid var(--color-text)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OUTPUT SETTINGS -->
+    <div class="blueprint" style="grid-area:output;display:flex;flex-direction:column;min-height:0;overflow:auto">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;align-items:center;padding:6px 10px;border-bottom:1px solid var(--color-divider)">
+        <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Output</span>
+        <span style="flex:1"></span>
+        <span class="tag tag-accent">mp4 · av1 · aac</span>
+      </div>
+      <div style="padding:12px 12px 4px;display:flex;flex-direction:column;gap:14px">
+        <div class="field">
+          <label>Resolution</label>
+          <div class="seg" style="display:flex;font-size:12px">
+            <sc-for list="{{ resOpts }}" as="r" hint-placeholder-count="4"><label class="seg-opt" style="flex:1;justify-content:center;padding:5px 4px"><input type="radio" name="res" checked="{{ r.active }}" onChange="{{ r.pick }}">{{ r.label }}</label></sc-for>
+          </div>
+          <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;opacity:.6;margin-top:5px">{{ outDims }} · scale=lanczos</div>
+        </div>
+        <div class="field">
+          <div style="display:flex;justify-content:space-between;font-size:12px"><label style="margin:0;opacity:.7">Video quality</label><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px">{{ vq }} · crf {{ crf }}</span></div>
+          <input class="rc-range" type="range" min="0" max="100" value="{{ vq }}" onChange="{{ onVq }}">
+          <div style="display:flex;justify-content:space-between;font-size:10px;opacity:.5"><span>smaller</span><span>{{ vqHint }}</span><span>sharper</span></div>
+        </div>
+        <div class="field">
+          <div style="display:flex;justify-content:space-between;font-size:12px"><label style="margin:0;opacity:.7">Audio quality</label><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px">{{ aq }} · {{ akbps }} kb/s</span></div>
+          <input class="rc-range" type="range" min="0" max="100" value="{{ aq }}" onChange="{{ onAq }}">
+          <div style="display:flex;justify-content:space-between;font-size:10px;opacity:.5"><span>64 kb/s</span><span>aac · 48 kHz · stereo</span><span>320 kb/s</span></div>
+        </div>
+        <div class="field">
+          <label>File name</label>
+          <input class="input" value="{{ outName }}" onChange="{{ onOutName }}" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;min-height:32px">
+        </div>
+        <div class="field">
+          <label>Folder <span style="opacity:.6">(remembered)</span></label>
+          <div style="display:flex;gap:6px">
+            <input class="input" value="{{ outDir }}" readOnly="{{ true }}" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;min-height:32px">
+            <button class="btn btn-secondary" onClick="{{ browseDir }}" style="font-size:12px;padding:4px 10px">Browse</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;border:1px solid var(--color-divider);font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5">
+          <span style="opacity:.55">output length</span><span>{{ totalOutTc }}</span>
+          <span style="opacity:.55">estimated size</span><span>{{ estSize }}</span>
+          <span style="opacity:.55">video</span><span>libsvtav1 · preset 6 · 10-bit</span>
+          <span style="opacity:.55">audio</span><span>aac · {{ akbps }} kb/s</span>
+        </div>
+        <p style="font-size:11px;line-height:1.5;opacity:.65;margin:0 0 8px">A/V sync: each span is decoded from the previous keyframe and trimmed on exact PTS, audio is resampled with <span style="font-family:ui-monospace,Menlo,monospace">aresample=async=1</span>, timestamps are regenerated across the concatenation, and the muxed file is probed for drift before the job is marked done.</p>
+      </div>
+    </div>
+
+    <!-- JOBS: queue + history -->
+    <div class="blueprint" style="grid-area:jobs;display:flex;flex-direction:column;min-height:0">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--color-divider)">
+        <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Encode queue</span>
+        <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;opacity:.6">{{ queueSummary }}</span>
+      </div>
+      <div style="overflow:auto;min-height:0;flex:1">
+        <sc-if value="{{ queueEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:14px 12px;font-size:12px;opacity:.55">No jobs queued. Encode adds the current spans and settings as a job.</div>
+        </sc-if>
+        <sc-for list="{{ queue }}" as="j" hint-placeholder-count="1">
+          <div style="padding:8px 12px;border-bottom:1px solid var(--color-divider);display:grid;grid-template-columns:48px 1fr auto;gap:10px;align-items:center">
+            <div style="width:48px;height:27px;background:{{ j.thumb }};outline:1px solid var(--color-divider)"></div>
+            <div style="min-width:0">
+              <div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ j.name }}</div>
+              <div style="font-size:11px;opacity:.6">{{ j.meta }}</div>
+              <div style="height:3px;background:var(--color-divider);margin-top:5px;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:{{ j.pct }}%;background:var(--color-accent)"></div></div>
+            </div>
+            <div style="text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5">
+              <div style="animation:{{ j.anim }}">{{ j.statusLabel }}</div>
+              <sc-if value="{{ j.isDone }}" hint-placeholder-val="{{ false }}"><button class="btn btn-ghost" onClick="{{ j.play }}" style="font-size:12px;padding:1px 6px">Play output</button></sc-if>
+              <sc-if value="{{ j.isActive }}" hint-placeholder-val="{{ true }}"><button class="btn btn-ghost" onClick="{{ j.cancel }}" style="font-size:12px;padding:1px 6px">Cancel</button></sc-if>
+            </div>
+          </div>
+        </sc-for>
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--color-divider);border-top:1px solid var(--color-divider);margin-top:8px">
+          <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">History</span>
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;opacity:.5">~/.local/share/reference-clipper/</span>
+        </div>
+        <sc-for list="{{ history }}" as="h" hint-placeholder-count="3">
+          <div onClick="{{ h.open }}" style="padding:7px 12px;border-bottom:1px solid var(--color-divider);display:grid;grid-template-columns:48px 1fr;gap:10px;align-items:center;cursor:pointer" style-hover="background:var(--color-accent-100)">
+            <div style="width:48px;height:27px;background:{{ h.thumb }};outline:1px solid var(--color-divider)"></div>
+            <div style="min-width:0">
+              <div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ h.name }}</div>
+              <div style="font-size:11px;opacity:.6">{{ h.meta }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- EMPTY STATE -->
+  <sc-if value="{{ noClip }}" hint-placeholder-val="{{ false }}">
+  <div style="grid-row:3;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:14px;padding:14px;min-height:0">
+    <div class="blueprint" onDragOver="{{ dragOver }}" onDragLeave="{{ dragLeave }}" onDrop="{{ drop }}" style="display:grid;place-items:center;text-align:center;padding:40px;border-style:{{ dropBorderStyle }};background:{{ dropBg }}">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;max-width:420px">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-accent)"><rect x="2" y="4" width="20" height="16" rx="0"></rect><path d="M2 8h20M2 16h20M6 4v16M18 4v16"></path></svg>
+        <h2 style="margin:0;font-size:30px">Drop a video here</h2>
+        <p style="margin:0;opacity:.7;font-size:14px">or open one from the gallery, the file browser, or pass a path on the command line.</p>
+        <button class="btn btn-primary blueprint" onClick="{{ openDialog }}" style="padding:8px 18px;white-space:nowrap"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>Open file…</button>
+        <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;opacity:.5;line-height:1.6">reference-clipper &lt;file&gt;<br>registered for video/mp4 · video/x-matroska · video/webm · video/quicktime</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-rows:minmax(0,1fr) minmax(0,1fr);gap:14px;min-height:0">
+      <div class="blueprint" style="display:flex;flex-direction:column;min-height:0">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div style="display:flex;align-items:center;padding:6px 10px;border-bottom:1px solid var(--color-divider)"><span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Gallery · ~/Videos</span></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:10px;overflow:auto">
+          <sc-for list="{{ gallery }}" as="g" hint-placeholder-count="4">
+            <div onClick="{{ g.open }}" style="cursor:pointer" style-hover="color:var(--color-accent)">
+              <div style="aspect-ratio:16/9;background:{{ g.thumb }};outline:1px solid var(--color-divider);display:grid;place-items:end start"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:#fff;background:rgba(0,0,0,.55);padding:1px 5px;margin:4px">{{ g.dur }}</span></div>
+              <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.name }}</div>
+              <div style="font-size:10px;opacity:.55">{{ g.meta }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="blueprint" style="display:flex;flex-direction:column;min-height:0">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--color-divider)"><span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Previous jobs</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;opacity:.5">~/.local/share/reference-clipper/history.json</span></div>
+        <div style="overflow:auto">
+          <sc-for list="{{ history }}" as="h" hint-placeholder-count="3">
+            <div onClick="{{ h.open }}" style="padding:7px 12px;border-bottom:1px solid var(--color-divider);display:grid;grid-template-columns:56px 1fr;gap:10px;align-items:center;cursor:pointer" style-hover="background:var(--color-accent-100)">
+              <div style="width:56px;height:32px;background:{{ h.thumb }};outline:1px solid var(--color-divider)"></div>
+              <div style="min-width:0"><div style="font-family:ui-monospace,Menlo,monospace;font-size:12px">{{ h.name }}</div><div style="font-size:11px;opacity:.6">{{ h.meta }}</div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- status bar -->
+  <div style="grid-row:4;display:flex;align-items:center;gap:16px;padding:3px 10px;border-top:1px solid var(--color-divider);font-family:ui-monospace,Menlo,monospace;font-size:10.5px;opacity:.75">
+    <span>ffmpeg 7.1 · libsvtav1 2.3 · aac</span>
+    <span>{{ statusMsg }}</span>
+    <span style="flex:1"></span>
+    <span>out: {{ outDir }}</span>
+  </div>
+
+  <!-- FILE DIALOG -->
+  <sc-if value="{{ dialogOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="dialog-backdrop" style="position:absolute;z-index:50">
+      <div class="dialog blueprint" style="width:min(760px,96%);padding:0;gap:0;background:var(--color-bg)">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--color-divider)">
+          <span class="dialog-title" style="font-size:18px">Open video</span>
+          <span style="flex:1"></span>
+          <input class="input" value="{{ dialogPath }}" readOnly="{{ true }}" style="width:320px;min-height:30px;font-family:ui-monospace,Menlo,monospace;font-size:12px">
+        </div>
+        <div style="display:grid;grid-template-columns:170px 1fr;min-height:340px">
+          <div style="border-right:1px solid var(--color-divider);padding:8px 0;font-size:13px">
+            <div style="padding:4px 14px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Places</div>
+            <sc-for list="{{ places }}" as="p" hint-placeholder-count="5">
+              <button onClick="{{ p.go }}" style="display:block;width:100%;text-align:left;font:inherit;background:{{ p.bg }};border:0;color:inherit;padding:5px 14px;cursor:pointer" style-hover="background:var(--color-accent-100)">{{ p.name }}</button>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column">
+            <div style="display:grid;grid-template-columns:1fr 90px 90px 110px;padding:5px 14px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;border-bottom:1px solid var(--color-divider)"><span>Name</span><span>Duration</span><span>Size</span><span>Modified</span></div>
+            <sc-for list="{{ dialogFiles }}" as="f" hint-placeholder-count="5">
+              <button onClick="{{ f.pick }}" onDoubleClick="{{ f.open }}" style="display:grid;grid-template-columns:1fr 90px 90px 110px;width:100%;text-align:left;font:inherit;font-family:ui-monospace,Menlo,monospace;font-size:12px;background:{{ f.bg }};color:{{ f.color }};border:0;padding:6px 14px;cursor:pointer" style-hover="background:var(--color-accent-100)"><span>{{ f.name }}</span><span>{{ f.dur }}</span><span>{{ f.size }}</span><span>{{ f.mod }}</span></button>
+            </sc-for>
+          </div>
+        </div>
+        <div class="dialog-actions" style="padding:10px 14px;border-top:1px solid var(--color-divider);margin:0;align-items:center">
+          <span style="font-size:12px;opacity:.6;margin-right:auto">Filter: Video files</span>
+          <button class="btn btn-secondary" onClick="{{ closeDialog }}">Cancel</button>
+          <button class="btn btn-primary" onClick="{{ confirmOpen }}" disabled="{{ noPick }}">Open</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div class="blueprint" style="position:absolute;right:20px;bottom:36px;background:var(--color-bg);box-shadow:var(--shadow-md);padding:8px 14px;font-size:12px;z-index:60"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>{{ toast }}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;layout&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;classic&quot;,&quot;options&quot;:[&quot;classic&quot;,&quot;threeColumn&quot;,&quot;stacked&quot;],&quot;tsType&quot;:&quot;'classic'|'threeColumn'|'stacked'&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;system&quot;,&quot;options&quot;:[&quot;system&quot;,&quot;light&quot;,&quot;dark&quot;],&quot;tsType&quot;:&quot;'system'|'light'|'dark'&quot;,&quot;section&quot;:&quot;Appearance&quot;}}">
+const FPS = 30;
+const FILES = [
+  {name:'interview_take03.mkv', dur:187.4, w:3840, h:2160, fps:29.97, size:'1.9 GB', mod:'Today 09:12', seed:3},
+  {name:'drone_coast_4k.mp4', dur:412.0, w:3840, h:2160, fps:30, size:'4.6 GB', mod:'Yesterday', seed:7},
+  {name:'screen_capture_2026-11-03.webm', dur:1325.2, w:2560, h:1440, fps:60, size:'820 MB', mod:'Nov 3', seed:11},
+  {name:'b-roll_market.mov', dur:96.6, w:1920, h:1080, fps:25, size:'1.1 GB', mod:'Oct 28', seed:5},
+  {name:'lecture_part2.mp4', dur:3611.0, w:1920, h:1080, fps:30, size:'2.4 GB', mod:'Oct 21', seed:9},
+];
+const rnd = s => { let x = Math.sin(s * 9301 + 49297) * 233280; return x - Math.floor(x); };
+const thumb = (seed, i) => { const l = 28 + rnd(seed * 13 + i) * 30, l2 = l + 14; return `repeating-linear-gradient(135deg, hsl(210 18% ${l}%) 0 4px, hsl(210 18% ${l2}%) 4px 8px)`; };
+const pad = n => String(n).padStart(2, '0');
+const tc = s => { s = Math.max(0, s); const m = Math.floor(s / 60), sec = Math.floor(s % 60), f = Math.floor((s - Math.floor(s)) * FPS); return `${pad(m)}:${pad(sec)}.${pad(f)}`; };
+const RES = [{label:'Source', h:0}, {label:'1080p', h:1080}, {label:'720p', h:720}, {label:'480p', h:480}];
+
+class Component extends DCLogic {
+  tlRef = React.createRef();
+  state = {
+    clip: null, spans: [], sel: null, playhead: 0, playing: false, source: 'input',
+    res: '1080p', vq: 70, aq: 70, outDir: '~/Videos/Clips', outName: '',
+    queue: [], drag: null, fileMenu: false, dialog: false, dialogDir: '~/Videos', pick: null, dragOver: false, toast: '',
+    history: [
+      {name:'interview_take02_clip.mp4', date:'Nov 6', spans:2, dur:'00:41.12', size:'38 MB', seed:21, src:0},
+      {name:'drone_coast_short.mp4', date:'Nov 4', spans:3, dur:'01:12.00', size:'96 MB', seed:17, src:1},
+      {name:'market_opening.mp4', date:'Oct 29', spans:1, dur:'00:18.08', size:'14 MB', seed:29, src:3},
+    ],
+  };
+  componentDidMount() {
+    this.last = performance.now(); this.timer = setInterval(() => this.tick(), 1000 / FPS);
+    this.enc = setInterval(() => this.encTick(), 400);
+    this.onKey = e => {
+      if (e.target.tagName === 'INPUT' || !this.state.clip) return;
+      const k = e.key;
+      if (k === ' ') { e.preventDefault(); this.togglePlay(); }
+      else if (k === 'i' || k === 'I') this.setIn();
+      else if (k === 'o' || k === 'O') this.setOut();
+      else if (k === 'ArrowLeft') this.seek(this.state.playhead - 1 / FPS);
+      else if (k === 'ArrowRight') this.seek(this.state.playhead + 1 / FPS);
+      else if (k === 'Delete' || k === 'Backspace') this.removeSpan(this.state.sel);
+      else if (k === 'Escape') this.setState({ fileMenu: false, dialog: false });
+    };
+    window.addEventListener('keydown', this.onKey);
+  }
+  componentWillUnmount() { clearInterval(this.timer); clearInterval(this.enc); window.removeEventListener('keydown', this.onKey); }
+  sorted() { return [...this.state.spans].sort((a, b) => a.start - b.start); }
+  totalOut() { return this.state.spans.reduce((t, s) => t + (s.end - s.start), 0); }
+  tlEnd() { return this.state.clip.dur; }
+  tick() {
+    const now = performance.now(), dt = Math.min(0.5, (now - this.last) / 1000); this.last = now;
+    const { playing, playhead, source, clip } = this.state;
+    if (!playing || !clip) return;
+    let t = playhead + dt;
+    const sp = this.sorted();
+    const cur = sp.find(s => t >= s.start && t <= s.end);
+    if (!cur) { const next = sp.find(s => s.start > t); if (next) t = next.start; else return this.setState({ playing: false, playhead: sp.length ? sp[sp.length - 1].end : t }); }
+    this.setState({ playhead: t });
+  }
+  encTick() {
+    const q = this.state.queue; if (!q.length) return;
+    const i = q.findIndex(j => j.status === 'encoding'); const qi = q.findIndex(j => j.status === 'queued');
+    if (i < 0) { if (qi < 0) return; q[qi].status = 'encoding'; return this.setState({ queue: [...q] }); }
+    const j = q[i]; j.pct = Math.min(100, j.pct + 3 + rnd(j.id + j.pct) * 7);
+    if (j.pct >= 100) {
+      j.status = 'done';
+      const h = { name: j.name, date: 'Today', spans: j.spans, dur: j.dur, size: j.size, seed: j.seed, src: j.src, output: true };
+      this.setState({ queue: [...q], history: [h, ...this.state.history], source: 'output', playhead: this.sorted().length ? this.sorted()[0].start : 0, playing: false, toast: `${j.name} written · A/V drift 0 ms` });
+      setTimeout(() => this.setState({ toast: '' }), 3500);
+    } else this.setState({ queue: [...q] });
+  }
+  loadClip(f) {
+    const d = f.dur, spans = [{ id: 1, start: d * 0.08, end: d * 0.19 }, { id: 2, start: d * 0.42, end: d * 0.56 }];
+    this.setState({ clip: f, spans, sel: 1, playhead: spans[0].start, playing: false, source: 'input', outName: f.name.replace(/\.[^.]+$/, '') + '_clip.mp4', dialog: false, fileMenu: false, dragOver: false, pick: null });
+  }
+  seek(t) { this.setState({ playhead: Math.min(this.tlEnd(), Math.max(0, t)) }); }
+  togglePlay = () => {
+    const { playing, playhead, source } = this.state;
+    if (playing) return this.setState({ playing: false });
+    const sp = this.sorted(); if (!sp.length) return; const cur = sp.find(s => playhead >= s.start && playhead < s.end); if (!cur) { const next = sp.find(s => s.start > playhead); this.setState({ playhead: next ? next.start : sp[0].start }); }
+    this.setState({ playing: true });
+  };
+  setIn = () => { const s = this.state.spans.find(x => x.id === this.state.sel); if (!s) return; const t = this.state.playhead; s.start = Math.min(t, s.end - 1 / FPS); this.setState({ spans: [...this.state.spans] }); };
+  setOut = () => { const s = this.state.spans.find(x => x.id === this.state.sel); if (!s) return; const t = this.state.playhead; s.end = Math.max(t, s.start + 1 / FPS); this.setState({ spans: [...this.state.spans] }); };
+  addSpan = () => { const d = this.state.clip.dur, t = this.state.playhead, id = Date.now(); this.setState({ spans: [...this.state.spans, { id, start: t, end: Math.min(d, t + Math.min(10, d * 0.05)) }], sel: id }); };
+  removeSpan(id) { if (id == null) return; const spans = this.state.spans.filter(s => s.id !== id); this.setState({ spans, sel: spans.length ? spans[0].id : null }); }
+  timeAt(e) { const r = this.tlRef.current.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * this.tlEnd(); }
+  tlDown = e => { if (this.state.drag) return; this.setState({ playhead: this.timeAt(e), drag: { kind: 'head' }, playing: false }); e.currentTarget.setPointerCapture(e.pointerId); };
+  tlMove = e => {
+    const d = this.state.drag; if (!d) return; const t = this.timeAt(e);
+    if (d.kind === 'head') return this.setState({ playhead: t });
+    const s = this.state.spans.find(x => x.id === d.id); if (!s) return;
+    const dur = this.state.clip.dur;
+    if (d.kind === 'l') s.start = Math.min(t, s.end - 1 / FPS);
+    else if (d.kind === 'r') s.end = Math.max(t, s.start + 1 / FPS);
+    else { const len = s.end - s.start; let ns = t - d.off; ns = Math.max(0, Math.min(dur - len, ns)); s.start = ns; s.end = ns + len; }
+    this.setState({ spans: [...this.state.spans], playhead: d.kind === 'l' ? s.start : d.kind === 'r' ? s.end : this.state.playhead });
+  };
+  tlUp = () => this.setState({ drag: null });
+  encode = () => {
+    const { clip, spans, res, vq, aq, outName, queue } = this.state; if (!spans.length) return;
+    const dur = this.totalOut(); const id = Date.now();
+    const job = { id, name: outName, status: queue.some(j => j.status !== 'done') ? 'queued' : 'encoding', pct: 0, spans: spans.length, dur: tc(dur), size: this.estSize(), seed: id % 97, src: FILES.indexOf(clip), res, vq, aq };
+    this.setState({ queue: [...queue, job], toast: 'Job added to queue' }); setTimeout(() => this.setState({ toast: '' }), 2000);
+  };
+  outDims() { const c = this.state.clip, r = RES.find(x => x.label === this.state.res); if (!c) return ''; if (!r.h || r.h >= c.h) return `${c.w}×${c.h}`; return `${Math.round(c.w * r.h / c.h / 2) * 2}×${r.h}`; }
+  estSize() { const r = RES.find(x => x.label === this.state.res); const h = (!r.h || !this.state.clip) ? (this.state.clip ? this.state.clip.h : 1080) : Math.min(r.h, this.state.clip.h); const mbps = (h / 1080) * (h / 1080) * (0.8 + this.state.vq / 100 * 7) + (64 + this.state.aq / 100 * 256) / 1000; const mb = mbps * this.totalOut() / 8; return mb > 1024 ? (mb / 1024).toFixed(2) + ' GB' : Math.round(mb) + ' MB'; }
+  renderVals() {
+    const S = this.state, clip = S.clip, src = S.source, hasOutput = S.history.some(h => h.output) ;
+    const theme = this.props.theme ?? 'system';
+    const layout = this.props.layout ?? 'classic';
+    const grids = {
+      classic: { cols: 'minmax(0,1fr) 360px', rows: 'minmax(0,1.3fr) minmax(0,1fr)', areas: '"preview output" "timeline jobs"' },
+      threeColumn: { cols: '300px minmax(0,1fr) 340px', rows: 'minmax(0,1.3fr) minmax(0,1fr)', areas: '"jobs preview output" "jobs timeline output"' },
+      stacked: { cols: 'minmax(0,1fr) minmax(0,1fr)', rows: 'minmax(0,1.4fr) 230px minmax(0,1fr)', areas: '"preview preview" "timeline timeline" "output jobs"' },
+    }[layout] || {};
+    const end = clip ? this.tlEnd() : 1;
+    const sp = clip ? this.sorted() : [];
+        const spanItems = sp.map((s, i) => {
+      const n = i + 1, selected = s.id === S.sel, dur = s.end - s.start;
+      const left = s.start / end * 100;
+      const mk = kind => e => { e.stopPropagation(); const r = this.tlRef.current.getBoundingClientRect(); const t = ((e.clientX - r.left) / r.width) * end; this.setState({ sel: s.id, drag: { kind, id: s.id, off: t - s.start }, playing: false }); this.tlRef.current.setPointerCapture(e.pointerId); };
+      return { n, id: s.id, left, width: dur / end * 100, editable: src === 'input', border: selected ? '2px solid var(--color-accent)' : '1px solid var(--color-accent)', durTc: tc(dur), startTc: tc(s.start), endTc: tc(s.end), rowBg: selected ? 'var(--color-accent-100)' : 'transparent',
+        downL: mk('l'), downR: mk('r'), downBody: mk('m'), select: () => this.setState({ sel: s.id, playhead: s.start }), remove: e => { e.stopPropagation(); this.removeSpan(s.id); } };
+    });
+    const nTicks = 8, ticks = Array.from({ length: nTicks }, (_, i) => ({ left: i / nTicks * 100, label: tc(i / nTicks * end).slice(0, 5) }));
+    const seed = clip ? clip.seed : 1;
+    const frames = Array.from({ length: 18 }, (_, i) => ({ bg: thumb(seed, i) }));
+    const waveBars = Array.from({ length: 140 }, (_, i) => ({ h: 15 + Math.round(rnd(seed * 7 + i) * 80 * (0.4 + 0.6 * Math.abs(Math.sin(i / 9)))) }));
+    const inSpan = clip ? sp.some(s => S.playhead >= s.start && S.playhead <= s.end) : true;
+    const doneJob = S.history.find(x => x.output);
+    const hue = 200 + (clip ? (S.playhead / end) * 60 : 0);
+    const r = RES.find(x => x.label === S.res);
+    const crf = Math.round(63 - S.vq * 0.55), akbps = Math.round(64 + S.aq / 100 * 256);
+    const mkHist = h => ({ name: h.name, thumb: thumb(h.seed, 2), meta: `${h.date} · ${h.spans} span${h.spans > 1 ? 's' : ''} · ${h.dur} · ${h.size}`, open: () => { this.loadClip(FILES[h.src]); } });
+    const files = FILES.filter(f => S.dialogDir === '~/Videos' || S.dialogDir === 'Recent' ? true : f.seed % 2);
+    const active = S.queue.filter(j => j.status !== 'done').length;
+    return {
+      themeAttr: theme, gridCols: grids.cols, gridRows: grids.rows, gridAreas: grids.areas,
+      hasClip: !!clip, noClip: !clip, clipName: clip && clip.name, clipMeta: clip && `${clip.w}×${clip.h} · ${clip.fps} fps · ${tc(clip.dur)} · ${clip.size}`,
+      fileMenuOpen: S.fileMenu, toggleFileMenu: () => this.setState({ fileMenu: !S.fileMenu }), openDialog: () => this.setState({ dialog: true, fileMenu: false }), closeClip: () => this.setState({ clip: null, fileMenu: false, playing: false }),
+      recentFiles: FILES.slice(0, 3).map(f => ({ name: f.name, open: () => this.loadClip(f) })),
+      audIsInput: src === 'input', audIsOutput: src === 'output', setAudInput: () => this.setState({ source: 'input' }), setAudOutput: () => this.setState({ source: 'output' }),
+      encode: this.encode,
+      inDims: clip && `${clip.w}×${clip.h}`,
+      previewBg: `linear-gradient(${hue}deg, hsl(${hue} 20% 32%), hsl(${hue + 40} 25% 55%))`,
+      outBg: inSpan ? (doneJob ? `linear-gradient(${hue}deg, hsl(${hue} 16% 30%), hsl(${hue + 40} 20% 52%))` : `linear-gradient(${hue}deg, hsl(${hue} 20% 32%), hsl(${hue + 40} 25% 55%))`) : '#000',
+      outLabel: doneJob ? `${doneJob.name} · ${this.outDims()}` : `not encoded yet · preview via seek · ${this.outDims()}`,
+      outFrameLabel: !inSpan ? (src === 'output' ? 'black · silence' : 'black') : doneJob ? `decoded @ ${tc(S.playhead)}` : `seek preview @ ${tc(S.playhead)}`,
+      outDecoded: !!doneJob && inSpan,
+      goStart: () => this.seek(sp.length ? sp[0].start : 0), stepBack: () => this.seek(S.playhead - 1 / FPS), stepFwd: () => this.seek(S.playhead + 1 / FPS),
+      togglePlay: this.togglePlay, playLabel: S.playing ? 'Pause' : 'Play spans', playheadTc: tc(S.playhead), timelineEndTc: tc(end),
+      spansCount: `${sp.length} span${sp.length === 1 ? '' : 's'}`, totalOutTc: tc(this.totalOut()), spanItems, ticks, frames, waveBars,
+      tlRef: this.tlRef, tlDown: this.tlDown, tlMove: this.tlMove, tlUp: this.tlUp, playheadLeft: S.playhead / end * 100,
+      addSpan: this.addSpan, setIn: this.setIn, setOut: this.setOut, removeSel: () => this.removeSpan(S.sel), noSel: S.sel == null,
+      resOpts: RES.map(x => ({ label: x.label, active: x.label === S.res, pick: () => this.setState({ res: x.label }) })), outDims: this.outDims(),
+      vq: S.vq, aq: S.aq, crf, akbps, vqHint: S.vq > 85 ? 'near-lossless' : S.vq > 60 ? 'visually transparent' : S.vq > 35 ? 'good for review' : 'low bitrate',
+      onVq: e => this.setState({ vq: +e.target.value }), onAq: e => this.setState({ aq: +e.target.value }),
+      outName: S.outName, onOutName: e => this.setState({ outName: e.target.value }), outDir: S.outDir, browseDir: () => this.setState({ outDir: S.outDir === '~/Videos/Clips' ? '~/Projects/refs' : '~/Videos/Clips', toast: 'Output folder saved to config' }) || setTimeout(() => this.setState({ toast: '' }), 2000),
+      estSize: clip ? this.estSize() : '',
+      queueEmpty: !S.queue.length, queueSummary: active ? `${active} active` : S.queue.length ? 'idle' : '',
+      queue: S.queue.map(j => ({ name: j.name, thumb: thumb(j.seed, 1), pct: j.pct, meta: `${j.spans} spans · ${j.dur} · ${j.res} · crf ${Math.round(63 - j.vq * 0.55)} · ${j.size}`,
+        statusLabel: j.status === 'done' ? 'done ✓' : j.status === 'queued' ? 'queued' : `${Math.round(j.pct)}% · ${(18 + rnd(j.id) * 20).toFixed(0)} fps`, anim: j.status === 'encoding' ? 'rc-pulse 1.4s ease-in-out infinite' : 'none',
+        isDone: j.status === 'done', isActive: j.status !== 'done', play: () => this.setState({ source: 'output', playhead: sp.length ? sp[0].start : 0, playing: true }), cancel: () => this.setState({ queue: S.queue.filter(x => x.id !== j.id) }) })),
+      history: S.history.map(mkHist),
+      gallery: FILES.map(f => ({ name: f.name, dur: tc(f.dur).slice(0, 5), meta: `${f.w}×${f.h} · ${f.fps} fps · ${f.size}`, thumb: thumb(f.seed, 0), open: () => this.loadClip(f) })),
+      dragOver: e => { e.preventDefault(); if (!S.dragOver) this.setState({ dragOver: true }); }, dragLeave: () => this.setState({ dragOver: false }),
+      drop: e => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files[0]; this.loadClip(f ? { ...FILES[0], name: f.name, size: (f.size / 1048576).toFixed(0) + ' MB', seed: f.size % 50 } : FILES[0]); },
+      dropBorderStyle: S.dragOver ? 'dashed' : 'solid', dropBg: S.dragOver ? 'var(--color-accent-100)' : 'transparent',
+      statusMsg: clip ? (S.playing ? 'playing' : S.drag ? 'editing span' : 'ready') + ` · ${sp.length} spans · ${this.outDims()}` : `${S.history.length} jobs in history`,
+      dialogOpen: S.dialog, dialogPath: S.dialogDir === 'Recent' ? 'Recent files' : S.dialogDir, closeDialog: () => this.setState({ dialog: false, pick: null }),
+      places: ['Recent', '~', '~/Videos', '~/Downloads', '/media/usb0'].map(p => ({ name: p, bg: p === S.dialogDir ? 'var(--color-accent-100)' : 'transparent', go: () => this.setState({ dialogDir: p, pick: null }) })),
+      dialogFiles: files.map(f => ({ name: f.name, dur: tc(f.dur).slice(0, 5), size: f.size, mod: f.mod, bg: S.pick === f.name ? 'var(--color-accent)' : 'transparent', color: S.pick === f.name ? 'var(--color-bg)' : 'inherit', pick: () => this.setState({ pick: f.name }), open: () => this.loadClip(f) })),
+      noPick: !S.pick, confirmOpen: () => { const f = FILES.find(x => x.name === S.pick); if (f) this.loadClip(f); },
+      hasToast: !!S.toast, toast: S.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>
