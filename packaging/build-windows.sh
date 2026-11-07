@@ -50,8 +50,34 @@ stage="$root/dist/$name"
 rm -rf "$stage"
 mkdir -p "$stage/licenses"
 cp "$build/reference-clipper.exe" "$stage/"
-windeployqt --release --no-translations --compiler-runtime --dir "$stage" "$stage/reference-clipper.exe"
+windeployqt --release --no-translations --dir "$stage" "$stage/reference-clipper.exe"
 cp "$ffmpeg_lgpl"/bin/*.dll "$stage/"
+# windeployqt only deploys the compiler runtime for MSVC and g++, not llvm-mingw.
+# The x86_64 target's copies; the import check below catches any that are missing.
+for dll in libc++.dll libunwind.dll libwinpthread-1.dll; do
+    for candidate in "$toolchain/x86_64-w64-mingw32/bin/$dll" "$toolchain/bin/$dll"; do
+        if [ -f "$candidate" ]; then
+            cp "$candidate" "$stage/"
+            break
+        fi
+    done
+done
+
+# Nothing on the build machine's PATH exists on a user's PC, so every DLL any
+# shipped binary imports must be in the zip or be part of Windows.
+system="$(cygpath -u "$SYSTEMROOT/System32")"
+missing=0
+while IFS= read -r binary; do
+    while IFS= read -r dll; do
+        lower="$(tr '[:upper:]' '[:lower:]' <<<"$dll")"
+        case "$lower" in api-ms-win-*|ext-ms-win-*) continue ;; esac
+        if ! ls "$stage" | tr '[:upper:]' '[:lower:]' | grep -qxF "$lower" && [ ! -e "$system/$dll" ]; then
+            echo "missing from the zip: $dll (needed by ${binary#$stage/})"
+            missing=1
+        fi
+    done < <(llvm-objdump -p "$binary" | sed -n 's/^ *DLL Name: //p' | tr -d '\r')
+done < <(find "$stage" -iname '*.exe' -o -iname '*.dll')
+[ "$missing" = 0 ] || exit 1
 cp packaging/THIRD-PARTY.md assets/fonts/OFL.txt "$stage/licenses/"
 cp "$ffmpeg_lgpl/LICENSE.txt" "$stage/licenses/FFmpeg-LICENSE.txt"
 
