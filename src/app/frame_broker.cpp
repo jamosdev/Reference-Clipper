@@ -62,10 +62,10 @@ void FrameBroker::request(const FrameRequest& request)
     wake_.notify_all();
 }
 
-void FrameBroker::deliver(double time, QImage display, QImage scaled)
+void FrameBroker::deliver(double time, QImage display, QImage output)
 {
-    QMetaObject::invokeMethod(this, [this, time, display = std::move(display), scaled = std::move(scaled)] {
-        emit frameReady(time, display, scaled);
+    QMetaObject::invokeMethod(this, [this, time, display = std::move(display), output = std::move(output)] {
+        emit frameReady(time, display, output);
     }, Qt::QueuedConnection);
 }
 
@@ -73,7 +73,7 @@ void FrameBroker::run(rc::ClipInfo clip)
 {
     try {
         rc::StreamReader reader(clip.path, AVMEDIA_TYPE_VIDEO);
-        rc::FrameImager displayImager, scaledImager;
+        rc::FrameImager displayImager, outputImager;
         rc::FramePtr current = rc::makeFrame(), following = rc::makeFrame();
         bool haveCurrent = false, haveFollowing = false;
         double currentTime = 0, followingTime = 0;
@@ -128,11 +128,15 @@ void FrameBroker::run(rc::ClipInfo clip)
             const auto quality = request.fast ? rc::ScaleQuality::Fast : rc::ScaleQuality::Lanczos;
             QImage display = toImage(displayImager.convert(current.get(), {box.width(), box.height()},
                                                            clip.rotation, quality));
-            QImage scaled;
-            if (request.scaled.isValid() && !superseded())
-                scaled = toImage(scaledImager.convert(current.get(), {request.scaled.width(), request.scaled.height()},
-                                                      clip.rotation, rc::ScaleQuality::Lanczos));
-            deliver(currentTime, std::move(display), std::move(scaled));
+            QImage output;
+            if (request.output.isValid() && !superseded()) {
+                rc::FramePtr cropped;
+                if (request.crop) cropped = rc::croppedFrame(current.get(), *request.crop, clip.rotation, clip.display);
+                output = toImage(outputImager.convert(cropped ? cropped.get() : current.get(),
+                                                      {request.output.width(), request.output.height()}, clip.rotation,
+                                                      quality));
+            }
+            deliver(currentTime, std::move(display), std::move(output));
         }
     } catch (const std::exception& e) {
         const QString message = QString::fromUtf8(e.what());

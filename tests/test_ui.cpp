@@ -9,12 +9,14 @@
 #include <QJsonDocument>
 #include <QLineEdit>
 #include <QSlider>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
 
 #include "app/history.h"
 #include "app/main_window.h"
 #include "app/preview_panel.h"
+#include "app/source_view.h"
 #include "app/theme.h"
 #include "app/timeline_widget.h"
 #include "fixtures.h"
@@ -152,7 +154,7 @@ private slots:
     {
         auto* timeline = window_->timeline();
         const rc::Span span = session()->sortedSpans().front();
-        const int y = 10 + 30 + 38;  // inside the span band
+        const int y = bandY;
         const QPoint from(timeline->xForTime(span.end), y);
         const QPoint to(timeline->xForTime(span.end + 1), y);
         QTest::mousePress(timeline, Qt::LeftButton, Qt::NoModifier, from);
@@ -312,7 +314,255 @@ private slots:
         QVERIFY(!config.recent.empty());
     }
 
+    void rightDragAddsExactlyTheDraggedRange()
+    {
+        QVERIFY(session()->openFile(fixtures::threeScenes()));
+        QTRY_VERIFY(window_->timeline()->width() > 200);
+        auto* timeline = window_->timeline();
+        const QPoint from(timeline->xForTime(1), bandY);
+        const QPoint to(timeline->xForTime(2.5), bandY);
+        QTest::mousePress(timeline, Qt::RightButton, Qt::NoModifier, from);
+        QTest::mouseMove(timeline, to);
+        QTest::qWait(200);  // slower than a click, and far enough to be a drag
+        QTest::mouseRelease(timeline, Qt::RightButton, Qt::NoModifier, to);
+        QCOMPARE(session()->spans().size(), size_t(1));
+        const rc::Span span = session()->spans().front();
+        QVERIFY(qAbs(span.start - 1) < 0.05);
+        QVERIFY(qAbs(span.end - 2.5) < 0.05);
+        QCOMPARE(session()->selectedSpan(), span.id);
+        QVERIFY(!session()->findingScene());
+        session()->removeSelectedSpan();
+    }
+
+    void rightDragWorksInEitherDirection()
+    {
+        auto* timeline = window_->timeline();
+        const QPoint from(timeline->xForTime(2.5), bandY);
+        const QPoint to(timeline->xForTime(1), bandY);
+        QTest::mousePress(timeline, Qt::RightButton, Qt::NoModifier, from);
+        QTest::mouseMove(timeline, to);
+        QTest::qWait(200);
+        QTest::mouseRelease(timeline, Qt::RightButton, Qt::NoModifier, to);
+        const rc::Span span = session()->spans().front();
+        QVERIFY(qAbs(span.start - 1) < 0.05);
+        QVERIFY(qAbs(span.end - 2.5) < 0.05);
+        session()->removeSelectedSpan();
+    }
+
+    void rightClickGrowsToTheScene()
+    {
+        auto* timeline = window_->timeline();
+        const QPoint at(timeline->xForTime(4.5), bandY);
+        QTest::mouseClick(timeline, Qt::RightButton, Qt::NoModifier, at);
+        QCOMPARE(session()->spans().size(), size_t(1));  // there at once
+        QTRY_VERIFY_WITH_TIMEOUT(!session()->findingScene(), 20000);
+        const rc::Span span = session()->spans().front();
+        QVERIFY2(qAbs(span.start - 3) < 0.02 && qAbs(span.end - 6) < 0.02,
+                 qPrintable(QString("%1..%2").arg(span.start).arg(span.end)));
+    }
+
+    void aSloppyRightClickStillCountsAsAClick()
+    {
+        auto* timeline = window_->timeline();
+        const QPoint from(timeline->xForTime(1), bandY);
+        QTest::mousePress(timeline, Qt::RightButton, Qt::NoModifier, from);
+        QTest::mouseMove(timeline, from + QPoint(3, 0));
+        QTest::mouseRelease(timeline, Qt::RightButton, Qt::NoModifier, from + QPoint(3, 0));
+        QTRY_VERIFY_WITH_TIMEOUT(!session()->findingScene(), 20000);
+        QCOMPARE(session()->spans().size(), size_t(2));
+        const rc::Span first = session()->sortedSpans().front();
+        QCOMPARE(first.start, 0.0);                // saturates at the clip start
+        QVERIFY(qAbs(first.end - 3) < 0.02);       // and meets the cut, not the drag
+    }
+
+    void rightClickStopsAtAdjacentSpans()
+    {
+        // Open up a gap inside the third scene's neighbour and fill it.
+        session()->selectSpan(session()->sortedSpans().back().id);
+        session()->removeSelectedSpan();
+        session()->addSpanBetween(7, 7.5);
+        session()->addSpanBetween(3.5, 4);
+        session()->addSceneSpan(5);
+        QTRY_VERIFY_WITH_TIMEOUT(!session()->findingScene(), 20000);
+        const auto spans = session()->sortedSpans();
+        QCOMPARE(spans.size(), size_t(4));
+        const rc::Span middle = spans[2];
+        QVERIFY(qAbs(middle.start - 4) < 1e-3);    // the span before it
+        QVERIFY(qAbs(middle.end - 6) < 0.02);      // the cut comes before the span after
+    }
+
+    void rightClickInsideASpanSelectsIt()
+    {
+        const auto before = session()->sortedSpans();
+        session()->selectSpan(before.back().id);
+        auto* timeline = window_->timeline();
+        QTest::mouseClick(timeline, Qt::RightButton, Qt::NoModifier, QPoint(timeline->xForTime(3.75), bandY));
+        QCOMPARE(session()->spans().size(), before.size());
+        QCOMPARE(session()->selectedSpan(), before[1].id);
+        QVERIFY(!session()->findingScene());
+    }
+
+    void removingASpanStopsItsSearch()
+    {
+        while (!session()->spans().empty()) session()->removeSelectedSpan();
+        session()->addSceneSpan(4.5);
+        session()->removeSelectedSpan();
+        QTRY_VERIFY_WITH_TIMEOUT(!session()->findingScene(), 20000);
+        QVERIFY(session()->spans().empty());
+    }
+
+    void closingTheClipDuringASearchIsSafe()
+    {
+        session()->addSceneSpan(4.5);
+        session()->closeClip();
+        QVERIFY(!session()->findingScene());
+        QVERIFY(session()->openFile(fixtures::threeScenes()));
+        QVERIFY(session()->spans().empty());
+    }
+
+    void draggingOnTheInputDrawsACrop()
+    {
+        QVERIFY(session()->openFile(fixtures::shortWithInset()));
+        QTest::qWait(100);
+        auto* view = window_->previewPanel()->inputView();
+        QVERIFY(!session()->crop());
+        const QPoint from = view->widgetPoint(0, 186);
+        const QPoint to = view->widgetPoint(360, 454);
+        QTest::mousePress(view, Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(view, from + QPoint(10, 10));
+        QTest::mouseMove(view, to);
+        QTest::mouseRelease(view, Qt::LeftButton, Qt::NoModifier, to);
+        QVERIFY(session()->crop());
+        const rc::Crop crop = *session()->crop();
+        QVERIFY2(qAbs(crop.y - 186) <= 8 && qAbs(crop.bottom() - 454) <= 8 && crop.w >= 350,
+                 qPrintable(QString("%1,%2 %3x%4").arg(crop.x).arg(crop.y).arg(crop.w).arg(crop.h)));
+        QCOMPARE(crop.x % 2, 0);
+        QCOMPARE(crop.h % 2, 0);
+        shot("crop");
+    }
+
+    void outputFollowsTheCrop()
+    {
+        const rc::Crop crop = *session()->crop();
+        session()->setResolutionIndex(0);
+        QVERIFY((session()->outputSize() == crop.size()));
+        session()->addSpanBetween(1, 2);
+        session()->seek(1.5);
+        auto* out = window_->previewPanel()->outputView();
+        QTRY_VERIFY(out->chip().startsWith("seek preview"));
+        QTRY_VERIFY(out->hasImage());
+        QTest::qWait(250);
+        shot("crop_preview");
+    }
+
+    void cropEdgesDragIndependently()
+    {
+        auto* view = window_->previewPanel()->inputView();
+        const rc::Crop before = *session()->crop();
+        const QPoint from = view->widgetPoint(before.x + before.w / 2, before.bottom());
+        const QPoint to = view->widgetPoint(before.x + before.w / 2, 560);
+        QTest::mousePress(view, Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(view, to);
+        QTest::mouseRelease(view, Qt::LeftButton, Qt::NoModifier, to);
+        const rc::Crop after = *session()->crop();
+        QCOMPARE(after.y, before.y);
+        QCOMPARE(after.x, before.x);
+        QVERIFY(qAbs(after.bottom() - 560) <= 8);
+    }
+
+    void cropCanBeDraggedAround()
+    {
+        session()->setCrop({100, 100, 160, 160});
+        auto* view = window_->previewPanel()->inputView();
+        const QPoint from = view->widgetPoint(180, 180);
+        const QPoint to = view->widgetPoint(180, 280);
+        QTest::mousePress(view, Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(view, to);
+        QTest::mouseRelease(view, Qt::LeftButton, Qt::NoModifier, to);
+        const rc::Crop moved = *session()->crop();
+        QCOMPARE(moved.w, 160);
+        QCOMPARE(moved.h, 160);
+        QCOMPARE(moved.x, 100);
+        QVERIFY(qAbs(moved.y - 200) <= 8);
+    }
+
+    void clickingOutsideDismissesTheCrop()
+    {
+        auto* view = window_->previewPanel()->inputView();
+        const rc::Crop crop = *session()->crop();
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, view->widgetPoint(180, crop.y + crop.h / 2));
+        QVERIFY(session()->crop());  // inside: still there
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, view->widgetPoint(20, 600));
+        QVERIFY(!session()->crop());
+    }
+
+    void clickingTheLetterboxBarsDismissesToo()
+    {
+        session()->setCrop({100, 100, 160, 160});
+        auto* view = window_->previewPanel()->inputView();
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, QPoint(5, view->height() / 2));  // portrait clip: a bar
+        QVERIFY(!session()->crop());
+    }
+
+    void croppedEncodeRoundTrips()
+    {
+        session()->setCrop({0, 186, 360, 268});
+        session()->setVideoQuality(20);
+        session()->setResolutionIndex(0);
+        session()->setOutputName("inset.mp4");
+        session()->seek(1.5);
+        session()->encode();
+        const int id = session()->queue().last().id;
+        QTRY_VERIFY_WITH_TIMEOUT(session()->queue().last().status != Job::Status::Encoding
+                                     && session()->queue().last().status != Job::Status::Queued, 60000);
+        QCOMPARE(session()->queue().last().id, id);
+        QVERIFY(session()->queue().last().status == Job::Status::Done);
+
+        const rc::ClipInfo out = rc::probeClip((QDir::homePath() + "/Clips/inset.mp4").toStdString());
+        QVERIFY((out.display == rc::Dims{360, 268}));
+        QVERIFY(session()->finishedOutput());
+        QTest::qWait(250);
+        shot("crop_decoded");
+
+        // Moving the crop means the file no longer shows what the editor says.
+        session()->setCrop({0, 180, 360, 268});
+        QVERIFY(!session()->finishedOutput());
+        session()->setCrop({0, 186, 360, 268});
+        QVERIFY(session()->finishedOutput());
+    }
+
+    void historyRestoresTheCrop()
+    {
+        session()->closeClip();
+        session()->openHistoryEntry(0);
+        QVERIFY(session()->crop());
+        QVERIFY((*session()->crop() == rc::Crop{0, 186, 360, 268}));
+        QVERIFY(session()->finishedOutput());
+        const QVector<HistoryEntry> reloaded = loadHistory();
+        QVERIFY(reloaded.first().settings.crop.has_value());
+    }
+
+    void aCropLimitsWhatCountsAsACut()
+    {
+        session()->openFile(fixtures::shortWithInset());
+        session()->setCrop({0, 186, 360, 268});
+        session()->addSceneSpan(4.5);
+        QTRY_VERIFY_WITH_TIMEOUT(!session()->findingScene(), 20000);
+        const rc::Span span = session()->spans().front();
+        QVERIFY2(qAbs(span.start - 3) < 0.02 && qAbs(span.end - 6) < 0.02,
+                 qPrintable(QString("%1..%2").arg(span.start).arg(span.end)));
+    }
+
+    void openingAnotherClipClearsTheCrop()
+    {
+        QVERIFY(session()->crop());
+        QVERIFY(session()->openFile(fixtures::threeScenes()));
+        QVERIFY(!session()->crop());
+    }
+
 private:
+    static constexpr int bandY = 10 + 30 + 38;  // inside the timeline's span band
+
     Session* session() { return window_->session(); }
 
     void key(Qt::Key code)
@@ -338,12 +588,18 @@ int main(int argc, char** argv)
 {
     QTemporaryDir home;
     qputenv("HOME", home.path().toUtf8());
+    qputenv("USERPROFILE", home.path().toUtf8());  // Windows' idea of home
     qputenv("XDG_CONFIG_HOME", (home.path() + "/.config").toUtf8());
     qputenv("XDG_DATA_HOME", (home.path() + "/.local/share").toUtf8());
     qputenv("XDG_CACHE_HOME", (home.path() + "/.cache").toUtf8());
     qputenv("XDG_VIDEOS_DIR", (home.path() + "/Videos").toUtf8());
     qputenv("PULSE_SERVER", "unix:/nonexistent");  // no beeps out of the speakers
     QApplication app(argc, argv);
+    // Windows ignores the XDG variables, so keep config and history apart from
+    // the real ones and start from nothing on every run.
+    QStandardPaths::setTestModeEnabled(true);
+    QDir(paths::dataDir()).removeRecursively();
+    QFile::remove(paths::configFile());
     TestUi test;
     return QTest::qExec(&test, argc, argv);
 }

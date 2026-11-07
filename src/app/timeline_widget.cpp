@@ -96,8 +96,19 @@ TimelineWidget::Drag TimelineWidget::hitTest(const QPoint& pos, double time) con
 
 void TimelineWidget::mousePressEvent(QMouseEvent* event)
 {
-    if (!session_->hasClip() || event->button() != Qt::LeftButton) return;
+    if (!session_->hasClip() || drag_.kind != Drag::None) return;
     const double time = timeForX(event->pos().x());
+    if (event->button() == Qt::RightButton) {
+        session_->pause();
+        drag_.kind = Drag::New;
+        pressX_ = event->pos().x();
+        pressTime_ = dragTime_ = time;
+        pressClock_.start();
+        session_->seek(time);
+        emit editingChanged();
+        return;
+    }
+    if (event->button() != Qt::LeftButton) return;
     session_->pause();
     drag_ = hitTest(event->pos(), time);
     if (drag_.kind == Drag::None) {
@@ -125,6 +136,12 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent* event)
         session_->seek(time);
         return;
     }
+    if (drag_.kind == Drag::New) {
+        dragTime_ = time;
+        session_->seek(time);
+        update();
+        return;
+    }
     const auto spans = session_->spans();
     const auto it = std::find_if(spans.begin(), spans.end(), [this](const rc::Span& s) { return s.id == drag_.id; });
     if (it == spans.end()) return;
@@ -145,9 +162,16 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent* event)
     }
 }
 
-void TimelineWidget::mouseReleaseEvent(QMouseEvent*)
+void TimelineWidget::mouseReleaseEvent(QMouseEvent* event)
 {
+    const bool adding = drag_.kind == Drag::New;
+    if (adding != (event->button() == Qt::RightButton)) return;  // the other button of a two-button press
     drag_ = {};
+    if (adding) {
+        if (rc::isClickGesture(std::abs(event->pos().x() - pressX_), pressClock_.elapsed())) session_->addSceneSpan(pressTime_);
+        else session_->addSpanBetween(pressTime_, dragTime_);
+        update();
+    }
     emit editingChanged();
 }
 
@@ -249,6 +273,17 @@ void TimelineWidget::paintEvent(QPaintEvent*)
             p.setPen(tokens.bg);
             p.drawRect(grip.adjusted(-1, -1, 0, 0));
         }
+    }
+
+    // The span a right-drag would add
+    if (drag_.kind == Drag::New) {
+        const int left = xForTime(std::min(pressTime_, dragTime_));
+        const int right = xForTime(std::max(pressTime_, dragTime_));
+        const QRect box(left, top, std::max(2, right - left), kSpanHeight);
+        p.fillRect(box, Theme::faded(tokens.accent, 0.18));
+        p.setPen(QPen(tokens.accent, 1, Qt::DashLine));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(box.adjusted(0, 0, -1, -1));
     }
 
     // Playhead

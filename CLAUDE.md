@@ -9,6 +9,9 @@ Reference Clipper is a Linux desktop app (C++20, Qt 6 Widgets, FFmpeg libraries)
 ## Commands
 
 ```sh
+make build                                         # the dev build below
+make run                                           # builds, then launches the app
+
 cmake --preset dev && cmake --build --preset dev   # Debug + ASan/UBSan, in build/
 ctest --preset dev                                 # all tests, needs the dev build
 ./build/reference-clipper [file]                   # run the app
@@ -23,7 +26,9 @@ QT_QPA_PLATFORM=offscreen ASAN_OPTIONS=detect_leaks=0 ./build/tests/test_encode 
 QT_QPA_PLATFORM=offscreen ASAN_OPTIONS=detect_leaks=0 RC_SCREENSHOT_DIR=/some/dir ./build/tests/test_ui
 ```
 
-Needs Qt ≥ 6.8, the FFmpeg dev libraries with `libsvtav1`, and `libpulse-simple`. Tests also need the `ffmpeg` CLI with `libx264`, which generates fixtures into a temp dir at test time. Developed against FFmpeg 9.0 and SVT-AV1 4.2.
+Needs Qt ≥ 6.8, the FFmpeg dev libraries with `libsvtav1`, and `libpulse-simple` (Linux; Windows uses `winmm`). `-DFFMPEG_ROOT=<dir>` builds against a prebuilt FFmpeg tree instead of pkg-config.
+
+Release builds come from `.github/workflows/release.yml`. On every push it builds and tests a Windows zip (`packaging/build-windows.sh`: Qt's llvm-mingw build, under Git Bash) and a Linux AppImage (`packaging/build-appimage.sh`: inside `ubuntu:22.04`, which sets the oldest glibc it runs on). Pushes to `mastah` also publish both as a GitHub release. Dependency versions live in `packaging/versions.sh`. The packages link BtbN's LGPL FFmpeg so the download stays LGPL; tests make their fixtures with the GPL `ffmpeg` (for libx264), passed in through `$FFMPEG`. Tests also need the `ffmpeg` CLI with `libx264`, which generates fixtures into a temp dir at test time. Developed against FFmpeg 9.0 and SVT-AV1 4.2.
 
 ## Architecture
 
@@ -33,7 +38,7 @@ Three static libraries, with dependencies pointing strictly downward:
 - `src/media` (`rc_media`): everything that touches libav*, with no Qt. Blocking calls; cancellation and progress go through `std::atomic` and `std::function`.
 - `src/app` (`rc_app`): the Qt UI, a library so tests can drive the real `MainWindow`.
 
-`Session` holds all application state and every user action. Widgets read from it, call its actions and connect to its signals; they do not talk to each other or call the media layer for edits. All slow work runs off the UI thread and posts back with `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`: `FrameBroker` (frames, coalescing to the newest request), `ClipAssets` (filmstrip, waveform), `GalleryScanner`, `JobQueue` (one encode at a time), `AudioPreview`. Each joins its thread in its destructor, so anything added there must stay cancellable or quitting hangs.
+`Session` holds all application state and every user action. Widgets read from it, call its actions and connect to its signals; they do not talk to each other or call the media layer for edits. All slow work runs off the UI thread and posts back with `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`: `FrameBroker` (frames, coalescing to the newest request), `ClipAssets` (filmstrip, waveform), `GalleryScanner`, `JobQueue` (one encode at a time), `SceneSearch` (one search at a time), `AudioPreview`. Each joins its thread in its destructor, so anything added there must stay cancellable or quitting hangs.
 
 ### Invariants worth knowing before changing the encoder
 
@@ -44,18 +49,28 @@ Three static libraries, with dependencies pointing strictly downward:
 - **Video packets need a duration set** (`drainEncoder`). libsvtav1 emits none, and an MP4's final sample would get length 0 and vanish from playback.
 - **Drift is measured with priming excluded** (`probeDrift`). Priming is hidden by the edit list; counting it would fail every job above ~47 fps.
 
+### Crop
+
+A crop is one static rectangle in **displayed source pixels**: after rotation, with square pixels, and even in every value (`core/crop.h`). Everything downstream of it treats the cropped size as the source: `Session::outputSize`, the estimate, resolution presets. There are two pipelines that must agree: the encoder's filter chain (rotate, crop, scale) and `croppedFrame` for previews (maps back to stored pixels). `cropAppliesToTheUprightPictureInBothPipelines` checks both against the `ffmpeg` CLI's autorotated picture for every rotation; change one and that test tells you about the other. It also applies to scene detection, so a cut inside a 4:3 inset counts while a static 9:16 surround is ignored.
+
+### Scene detection
+
+`src/media/scene.cpp` finds hard cuts on demand, outward from a click in growing chunks, rather than scanning a whole clip on open. A cut is a spike in frame difference where one frame step accounts for most of the change between the medians of the frames before and after ("explained", which rejects animation), and most of that step survives ("persisted", which rejects flashes). Ordinary threshold detection fails on fixed-background footage: ffmpeg's `scene >= 0.3` finds none of the 16 cuts in the clip this was tuned on. If you touch the constants, re-measure on real footage with hand-verified cuts; the synthetic fixtures pass far looser settings.
+
 ### Behaviour that is deliberate
 
 - Spans are half-open `[start, end)`, matching the encoder. Overlaps are allowed and the shared region appears twice, in both output and playback; `Playback` tracks a span index for this reason.
 - Times from the UI go through `snapToFrame`, which floors to the displayed frame. The encoder drops `pts < start`, so without it an in-point set on the visible frame would lose that frame.
-- A finished output only drives the preview while the timeline's spans still match it (`Session::finishedOutput`). Any span edit returns the output pane to seek preview.
+- A finished output only drives the preview while the spans and crop still match it (`Session::finishedOutput`). Any edit to either returns the output pane to seek preview.
+- Right-click adds a one-frame span immediately and the search grows it, so the click responds at once and the edges can be seen moving. Editing or removing that span abandons its search: the user's hand wins. Inside an existing span, right-click only selects it. A false cut costs a short span, which is why detection favours a usable result over more tuning.
+- Scene edges are real frame times and are not passed through `snapToFrame`, which assumes constant frame rate.
 - Encodes write `<output>.part` and rename on success, so failed and cancelled jobs leave nothing at the output path.
 - `crfForQuality` uses integers on purpose: q=70 and q=90 land on exact .5 ties that floats round inconsistently.
 - Audio uses `libpulse-simple` (served by PipeWire too), not QtMultimedia; see the comment in `audio_preview.h`.
 
 ### Where this differs from the prototype
 
-The prototype is a mock, so these are intentional: clips open with no spans rather than two demo spans; quality hints follow the README's `<35/<60/<85` boundaries; the frame label sits in the corner rather than over the image being inspected; the `DECODED AV1` badge keeps a dark fill in dark theme so white text stays readable; the status bar shows real library versions; dialogs are native. Added beyond the spec: `failed` job status, a confirmation before replacing a file, and one before quitting mid-encode.
+The prototype is a mock, so these are intentional: clips open with no spans rather than two demo spans; quality hints follow the README's `<35/<60/<85` boundaries; the frame label sits in the corner rather than over the image being inspected; the `DECODED AV1` badge keeps a dark fill in dark theme so white text stays readable; the status bar shows real library versions; dialogs are native. Added beyond the spec: `failed` job status, a confirmation before replacing a file, one before quitting mid-encode, right-click span creation, scene detection and crop.
 
 ## Testing notes
 

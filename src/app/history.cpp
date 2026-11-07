@@ -101,6 +101,8 @@ QVector<HistoryEntry> loadHistory()
         e.settings.resolution = o["resolution"].toString("1080p");
         e.settings.presetHeight = o["presetHeight"].toInt();
         e.settings.size = {o["width"].toInt(), o["height"].toInt()};
+        if (const QJsonObject c = o["crop"].toObject(); !c.isEmpty())
+            e.settings.crop = rc::Crop{c["x"].toInt(), c["y"].toInt(), c["w"].toInt(), c["h"].toInt()};
         e.settings.videoQuality = o["videoQuality"].toInt(70);
         e.settings.audioQuality = o["audioQuality"].toInt(70);
         e.sizeBytes = o["sizeBytes"].toInteger();
@@ -115,7 +117,7 @@ void saveHistory(const QVector<HistoryEntry>& entries)
 {
     QJsonArray array;
     for (const HistoryEntry& e : entries) {
-        array.append(QJsonObject{
+        QJsonObject entry{
             {"id", e.id},
             {"source", e.source},
             {"output", e.output},
@@ -132,7 +134,10 @@ void saveHistory(const QVector<HistoryEntry>& entries)
             {"sizeBytes", qint64(e.sizeBytes)},
             {"duration", e.duration},
             {"driftMs", e.driftMs},
-        });
+        };
+        if (const auto& c = e.settings.crop)
+            entry["crop"] = QJsonObject{{"x", c->x}, {"y", c->y}, {"w", c->w}, {"h", c->h}};
+        array.append(entry);
     }
     writeAtomically(paths::historyFile(), QJsonDocument(array).toJson());
 }

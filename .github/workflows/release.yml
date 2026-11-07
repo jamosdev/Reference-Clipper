@@ -1,0 +1,94 @@
+# Every push: build and test a Windows zip and a Linux AppImage.
+# Pushes to mastah also publish both as a new GitHub release. A push carrying
+# several commits makes one release, for the newest commit.
+name: Release
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  name:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.name.outputs.tag }}
+    steps:
+      - id: name
+        run: echo "tag=r${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+  appimage:
+    needs: name
+    runs-on: ubuntu-latest
+    container: ubuntu:22.04
+    steps:
+      - name: Install git for checkout
+        run: apt-get update -qq && apt-get install -y -qq git ca-certificates
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .deps/linux
+          key: linux-deps-${{ hashFiles('packaging/versions.sh', 'packaging/build-appimage.sh') }}
+      - name: Build, test and package
+        run: packaging/build-appimage.sh "${{ needs.name.outputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.zip
+          if-no-files-found: error
+
+  windows:
+    needs: name
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .deps/windows
+          key: windows-deps-${{ hashFiles('packaging/versions.sh', 'packaging/build-windows.sh') }}
+      - name: Build, test and package
+        run: packaging/build-windows.sh "${{ needs.name.outputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    if: github.ref == 'refs/heads/mastah'
+    needs: [name, appimage, windows]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.name.outputs.tag }}
+        run: |
+          {
+            git log -1 --format='%B'
+            echo
+            echo "---"
+            echo "Built from ${GITHUB_SHA}."
+            echo
+            echo "- **Windows**: unzip and run \`reference-clipper.exe\`."
+            echo "- **Linux**: unzip, then run the \`.AppImage\` (glibc 2.35 or newer; audio needs PulseAudio or PipeWire's pulse server)."
+          } > notes.md
+          if gh release view "$TAG" > /dev/null 2>&1; then  # a re-run of the same workflow run
+            gh release upload "$TAG" dist/*.zip --clobber
+          else
+            gh release create "$TAG" dist/*.zip --target "$GITHUB_SHA" \
+              --title "Reference Clipper $TAG" --notes-file notes.md
+          fi

@@ -17,6 +17,7 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -27,6 +28,20 @@ class MediaError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
+
+// Paths travel as UTF-8 std::string, which is what FFmpeg takes on every
+// platform. std::filesystem::path(std::string) instead reads the ANSI code page
+// on Windows, so go through these for anything that touches the filesystem.
+inline std::filesystem::path fsPath(const std::string& utf8)
+{
+    return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+}
+
+inline std::string utf8(const std::filesystem::path& path)
+{
+    const std::u8string text = path.u8string();
+    return std::string(text.begin(), text.end());
+}
 
 inline std::string avError(int code)
 {

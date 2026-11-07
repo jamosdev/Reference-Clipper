@@ -11,12 +11,14 @@
 #include <optional>
 #include <thread>
 
+#include "core/crop.h"
 #include "media/probe.h"
 
 struct FrameRequest {
     double time = 0;
-    QSize display;   // pane size in device pixels
-    QSize scaled;    // if valid, also render at this size with Lanczos
+    QSize display;   // input pane size in device pixels
+    QSize output;    // if valid, also render the output picture at this size
+    std::optional<rc::Crop> crop;  // applies to the output picture only
     bool fast = false;
 };
 
@@ -31,12 +33,12 @@ public:
     void request(const FrameRequest& request);
 
 signals:
-    void frameReady(double time, const QImage& display, const QImage& scaled);
+    void frameReady(double time, const QImage& display, const QImage& output);
     void failed(const QString& message);
 
 private:
     void run(rc::ClipInfo clip);
-    void deliver(double time, QImage display, QImage scaled);
+    void deliver(double time, QImage display, QImage output);
 
     std::thread thread_;
     std::mutex mutex_;

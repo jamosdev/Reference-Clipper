@@ -1,5 +1,6 @@
 #include "media/frame_image.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace rc {
@@ -58,6 +59,52 @@ RgbImage FrameImager::convert(const AVFrame* frame, Dims size, int rotation, Sca
     const int strides[4] = {width * 4, 0, 0, 0};
     sws_scale(context_, frame->data, frame->linesize, 0, frame->height, planes, strides);
     return rotation ? rotated(image, rotation) : image;
+}
+
+Crop cropInPixels(const Crop& crop, int rotatedW, int rotatedH, Dims display)
+{
+    const double fx = double(rotatedW) / display.w;
+    const double fy = double(rotatedH) / display.h;
+    Crop out;
+    out.x = int(crop.x * fx) & ~1;
+    out.y = int(crop.y * fy) & ~1;
+    out.w = std::min(int(crop.w * fx + 0.5) & ~1, rotatedW - out.x);
+    out.h = std::min(int(crop.h * fy + 0.5) & ~1, rotatedH - out.y);
+    return out;
+}
+
+FramePtr croppedFrame(const AVFrame* frame, const Crop& crop, int rotation, Dims display)
+{
+    const bool swap = rotation % 180 != 0;
+    const int rotatedW = swap ? frame->height : frame->width;
+    const int rotatedH = swap ? frame->width : frame->height;
+    const Crop r = cropInPixels(crop, rotatedW, rotatedH, display);
+
+    // Back from the displayed picture to stored pixels.
+    int x = r.x, y = r.y, w = r.w, h = r.h;
+    if (rotation == 90) {
+        x = r.y;
+        y = frame->height - r.x - r.w;
+        w = r.h;
+        h = r.w;
+    } else if (rotation == 180) {
+        x = frame->width - r.x - r.w;
+        y = frame->height - r.y - r.h;
+    } else if (rotation == 270) {
+        x = frame->width - r.y - r.h;
+        y = r.x;
+        w = r.h;
+        h = r.w;
+    }
+
+    FramePtr out(av_frame_clone(frame));
+    if (!out) throw MediaError("out of memory");
+    out->crop_left = size_t(x);
+    out->crop_top = size_t(y);
+    out->crop_right = size_t(frame->width - x - w);
+    out->crop_bottom = size_t(frame->height - y - h);
+    check(av_frame_apply_cropping(out.get(), AV_FRAME_CROP_UNALIGNED), "crop frame");
+    return out;
 }
 
 RgbImage extractFrame(const std::string& path, double t, int width, bool fast)

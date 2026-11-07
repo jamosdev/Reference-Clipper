@@ -13,6 +13,7 @@
 #include <optional>
 
 #include "media/ffmpeg.h"
+#include "media/frame_image.h"
 #include "media/probe.h"
 #include "media/stream_reader.h"
 
@@ -158,6 +159,13 @@ private:
         if (clip_.rotation == 90) chain = "transpose=clock,";
         else if (clip_.rotation == 180) chain = "hflip,vflip,";
         else if (clip_.rotation == 270) chain = "transpose=cclock,";
+        if (request_.crop) {
+            const bool swap = clip_.rotation % 180 != 0;
+            const Crop c = cropInPixels(*request_.crop, swap ? frame->height : frame->width,
+                                        swap ? frame->width : frame->height, clip_.display);
+            chain += "crop=" + std::to_string(c.w) + ":" + std::to_string(c.h) + ":" + std::to_string(c.x) + ":"
+                     + std::to_string(c.y) + ",";
+        }
         chain += "scale=" + std::to_string(request_.size.w) + ":" + std::to_string(request_.size.h)
                  + ":flags=lanczos,setsar=1,format=yuv420p10le";
 
@@ -516,7 +524,7 @@ EncodeResult encodeClip(const EncodeRequest& request,
     std::error_code ec;
     try {
         if (request.spans.empty()) throw MediaError("no spans to encode");
-        const fs::path folder = fs::path(request.output).parent_path();
+        const fs::path folder = fsPath(request.output).parent_path();
         if (!folder.empty()) fs::create_directories(folder);
         const ClipInfo clip = probeClip(request.source);
         {
@@ -528,8 +536,8 @@ EncodeResult encodeClip(const EncodeRequest& request,
             result.error = "A/V drift " + std::to_string(int(std::lround(result.drift.driftSeconds * 1000)))
                            + " ms exceeds one frame";
         } else {
-            fs::rename(part, request.output);
-            result.sizeBytes = (long long)fs::file_size(request.output);
+            fs::rename(fsPath(part), fsPath(request.output));
+            result.sizeBytes = (long long)fs::file_size(fsPath(request.output));
             result.ok = true;
         }
     } catch (const Cancelled&) {
@@ -537,7 +545,7 @@ EncodeResult encodeClip(const EncodeRequest& request,
     } catch (const std::exception& e) {
         result.error = e.what();
     }
-    if (!result.ok) fs::remove(part, ec);
+    if (!result.ok) fs::remove(fsPath(part), ec);
     return result;
 }
 

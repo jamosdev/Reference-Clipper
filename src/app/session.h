@@ -16,6 +16,7 @@
 #include "app/audio_preview.h"
 #include "app/history.h"
 #include "app/job_queue.h"
+#include "app/scene_search.h"
 #include "core/timeline.h"
 #include "media/probe.h"
 
@@ -47,12 +48,13 @@ struct Job {
 };
 
 // A finished encode of the current clip. It stands for the output preview only
-// while the spans on the timeline are the spans it was made from: once they are
-// edited the file no longer shows what the timeline says.
+// while the spans and crop are the ones it was made from: once they are edited
+// the file no longer shows what the editor says.
 struct FinishedOutput {
     QString path;
     QString name;
     std::vector<rc::Span> spans;
+    std::optional<rc::Crop> crop;
     rc::OutputMap map;
     rc::Dims size;
 };
@@ -87,11 +89,22 @@ public:
     int64_t selectedSpan() const { return selected_; }
     void selectSpan(int64_t id);
     void addSpan();
+    // A new span over exactly this range, in either order.
+    void addSpanBetween(double a, double b);
+    // A new span around t that grows out to the scene's cuts, stopping at
+    // neighbouring spans and the clip's ends. Inside a span, selects that span.
+    void addSceneSpan(double t);
+    bool findingScene() const { return sceneSpan_ != 0; }
     void setInPoint();
     void setOutPoint();
     void removeSelectedSpan();
     void editSpan(int64_t id, double start, double end, bool movePlayheadToStart, bool movePlayheadToEnd);
     double outputLength() const { return rc::totalLength(spans_); }
+
+    // Crop, in displayed source pixels. Everything after it sees the cropped size.
+    const std::optional<rc::Crop>& crop() const { return crop_; }
+    void setCrop(const rc::Crop& crop);
+    void clearCrop();
 
     // Output settings
     AudioSource audioSource() const { return audioSource_; }
@@ -138,6 +151,7 @@ signals:
     void clipChanged();
     void spansChanged();
     void selectionChanged();
+    void cropChanged();
     void playheadChanged();
     void playingChanged();
     void outputSettingsChanged();
@@ -157,11 +171,17 @@ private:
     double frame() const { return clip_ ? clip_->frame() : 1.0 / 30; }
     double snapped(double seconds) const;
     bool loadClip(const QString& path);
+    void pushNewSpan(const rc::Span& span);
+    void startNextSceneSearch();
+    void applySceneRange(int64_t id, double start, double end);
+    void stopSceneSearches();
+    void abandonSceneSearch(int64_t id);
 
     std::optional<rc::ClipInfo> clip_;
     std::vector<rc::Span> spans_;
     int64_t selected_ = 0;
     int64_t nextSpanId_ = 1;
+    std::optional<rc::Crop> crop_;
     double playhead_ = 0;
     bool playing_ = false;
     rc::Playback playback_;
@@ -179,6 +199,15 @@ private:
     QVector<Job> queue_;
     QVector<HistoryEntry> history_;
     int nextJobId_ = 1;
+    struct PendingScene {
+        int64_t span;
+        double time;
+    };
+    QVector<PendingScene> scenesWaiting_;
+    int64_t sceneSpan_ = 0;  // the span being searched for, or 0
+    double sceneTime_ = 0;
+    SceneSearch sceneSearch_;
+
     JobQueue jobs_;
     ClipAssets assets_;
     AudioPreview audio_;

@@ -126,6 +126,11 @@ void StreamReader::setKeyframesOnly(bool on)
     codec_->skip_frame = on ? AVDISCARD_NONKEY : AVDISCARD_DEFAULT;
 }
 
+void StreamReader::setFastDecode(bool on)
+{
+    codec_->skip_loop_filter = on ? AVDISCARD_ALL : AVDISCARD_DEFAULT;
+}
+
 int64_t StreamReader::ptsOf(const AVFrame* frame) const
 {
     if (frame->best_effort_timestamp != AV_NOPTS_VALUE) return frame->best_effort_timestamp;

@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include "core/config.h"
+#include "core/crop.h"
 #include "core/quality.h"
 #include "core/timecode.h"
 #include "core/timeline.h"
@@ -118,6 +119,82 @@ private slots:
         const OutputMap overlap({{1, 2, 4}, {2, 3, 5}});
         QCOMPARE(*overlap.toOutput(3.5), 1.5);
         QCOMPARE(*overlap.toOutput(3.5, 0, 1), 2.5);
+    }
+    void freeRangeStopsAtNeighbours()
+    {
+        const std::vector<Span> spans{{1, 2, 3}, {2, 5, 6}, {3, 8, 9}};
+        FreeRange r = freeRangeAround(spans, 4, 10);
+        QCOMPARE(r.lower, 3.0);
+        QCOMPARE(r.upper, 5.0);
+        r = freeRangeAround(spans, 1, 10);
+        QCOMPARE(r.lower, 0.0);
+        QCOMPARE(r.upper, 2.0);
+        r = freeRangeAround(spans, 9.5, 10);
+        QCOMPARE(r.lower, 9.0);
+        QCOMPARE(r.upper, 10.0);
+        r = freeRangeAround(spans, 4, 10, 2);  // ignoring the span after
+        QCOMPARE(r.upper, 8.0);
+    }
+    void clickGestures()
+    {
+        QVERIFY(isClickGesture(0, 2000));   // held still, however long
+        QVERIFY(isClickGesture(5, 900));
+        QVERIFY(isClickGesture(25, 100));   // a quick slip
+        QVERIFY(!isClickGesture(25, 400));  // a slow, deliberate drag
+        QVERIFY(!isClickGesture(200, 100)); // a fast sweep is still a drag
+    }
+    void cropsAreEvenAndInBounds()
+    {
+        const Dims d{1080, 1920};
+        const Crop c = cropBetween(901, 1300, 3, 555, d);  // dragged up and left
+        QCOMPARE(c.x % 2, 0);
+        QCOMPARE(c.y % 2, 0);
+        QCOMPARE(c.w % 2, 0);
+        QCOMPARE(c.h % 2, 0);
+        QCOMPARE(c.x, 4);
+        QCOMPARE(c.y, 556);
+        QCOMPARE(c.right(), 902);
+        QCOMPARE(c.bottom(), 1300);
+        const Crop past = cropBetween(-50, -50, 5000, 5000, d);
+        QVERIFY((past == Crop{0, 0, 1080, 1920}));
+        const Crop odd = cropBetween(-50, -50, 5000, 5000, {641, 361});
+        QVERIFY((odd == Crop{0, 0, 640, 360}));
+    }
+    void cropsKeepAMinimumSize()
+    {
+        const Dims d{1080, 1920};
+        const Crop tiny = cropBetween(100, 100, 102, 102, d);
+        QCOMPARE(tiny.w, kMinCropSize);
+        QCOMPARE(tiny.h, kMinCropSize);
+        const Crop corner = cropBetween(1079, 1919, 1079, 1919, d);  // pinned inside
+        QCOMPARE(corner.right(), 1080);
+        QCOMPARE(corner.bottom(), 1920);
+        QCOMPARE(corner.w, kMinCropSize);
+
+        Crop c{100, 100, 200, 200};
+        c = resizeCrop(c, EdgeRight, 0, 0, d);
+        QCOMPARE(c.w, kMinCropSize);
+        QCOMPARE(c.x, 100);
+        const Dims small{40, 30};  // a picture below the minimum
+        QVERIFY((cropBetween(0, 0, 4, 4, small) == Crop{0, 0, 40, 30}));
+    }
+    void cropEdgesMoveIndependently()
+    {
+        const Dims d{1000, 1000};
+        const Crop c{100, 200, 300, 400};
+        QVERIFY((resizeCrop(c, EdgeLeft, 50, 0, d) == Crop{50, 200, 350, 400}));
+        QVERIFY((resizeCrop(c, EdgeRight, 900, 0, d) == Crop{100, 200, 800, 400}));
+        QVERIFY((resizeCrop(c, EdgeTop, 0, 100, d) == Crop{100, 100, 300, 500}));
+        QVERIFY((resizeCrop(c, EdgeBottom, 0, 800, d) == Crop{100, 200, 300, 600}));
+        QVERIFY((resizeCrop(c, EdgeLeft | EdgeTop, 50, 100, d) == Crop{50, 100, 350, 500}));
+    }
+    void cropMovesStopAtTheEdges()
+    {
+        const Dims d{1000, 1000};
+        const Crop c{100, 200, 300, 400};
+        QVERIFY((moveCrop(c, 50, 60, d) == Crop{150, 260, 300, 400}));
+        QVERIFY((moveCrop(c, -500, -500, d) == Crop{0, 0, 300, 400}));
+        QVERIFY((moveCrop(c, 5000, 5000, d) == Crop{700, 600, 300, 400}));
     }
     void configRoundTrip()
     {

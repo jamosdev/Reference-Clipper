@@ -35,6 +35,19 @@ void setIn(Span& span, double t, double frame);
 void setOut(Span& span, double t, double frame, double clipDuration);
 void moveTo(Span& span, double start, double clipDuration);
 
+// The free stretch of timeline around t: the end of the nearest span before it
+// and the start of the nearest one after it, or the clip's own ends. A span with
+// id `exclude` is ignored, so a span can ask about the room around itself.
+struct FreeRange {
+    double lower = 0;
+    double upper = 0;
+};
+FreeRange freeRangeAround(const std::vector<Span>& spans, double t, double clipDuration, int64_t exclude = 0);
+
+// Whether a press and release this close together in space and time was meant
+// as a click: small enough, or quick enough with a little slip of the mouse.
+bool isClickGesture(int pixels, long long milliseconds);
+
 struct Playback {
     double playhead = 0;
     bool playing = false;

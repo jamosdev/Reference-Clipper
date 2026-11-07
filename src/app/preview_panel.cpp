@@ -6,6 +6,7 @@
 #include <QVBoxLayout>
 
 #include "app/session.h"
+#include "app/source_view.h"
 #include "app/theme.h"
 
 FrameView::FrameView(QWidget* parent) : QWidget(parent) {}
@@ -40,6 +41,7 @@ void FrameView::paintEvent(QPaintEvent*)
         target.moveCenter(rect().center());
         p.drawImage(target, image_);
     }
+    paintOverlay(p);
 
     // In the corner, not centred as in the mock-up: the frame is what's being inspected.
     p.setFont(ui::monoFont(11));
@@ -86,7 +88,7 @@ PreviewPanel::PreviewPanel(Session* session, QWidget* parent) : Panel(parent), s
     root->setSpacing(0);
 
     audio_ = new Segmented({"Input", "Output"}, 11, false, this);
-    root->addWidget(ui::headerRow({ui::kicker("Preview"), ui::label("input · output side by side", "caption", ui::bodyFont(11)),
+    root->addWidget(ui::headerRow({ui::kicker("Preview"), ui::label("input · output side by side · drag on input to crop", "caption", ui::bodyFont(11)),
                                    ui::spacer(), ui::label("Audio", "caption", ui::bodyFont(11)), audio_}));
 
     auto* body = new QWidget(this);
@@ -97,7 +99,7 @@ PreviewPanel::PreviewPanel(Session* session, QWidget* parent) : Panel(parent), s
     columns->setContentsMargins(12, 12, 12, 12);
     columns->setSpacing(12);
 
-    const auto makeColumn = [&](const QString& title, ElidedLabel*& caption, QWidget*& box, FrameView*& view) {
+    const auto makeColumn = [&](const QString& title, ElidedLabel*& caption, QWidget*& box) {
         auto* column = new QVBoxLayout;
         column->setSpacing(5);
         auto* head = new QHBoxLayout;
@@ -111,12 +113,13 @@ PreviewPanel::PreviewPanel(Session* session, QWidget* parent) : Panel(parent), s
         box = new QWidget;
         box->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
         box->installEventFilter(this);
-        view = new FrameView(box);
         column->addWidget(box, 1);
         columns->addLayout(column, 1);
     };
-    makeColumn("Input", inputCaption_, inputBox_, input_);
-    makeColumn("Output", outputCaption_, outputBox_, output_);
+    makeColumn("Input", inputCaption_, inputBox_);
+    makeColumn("Output", outputCaption_, outputBox_);
+    input_ = new SourceView(session_, inputBox_);
+    output_ = new FrameView(outputBox_);
     root->addWidget(body, 1);
 
     auto* transport = new QWidget(this);
@@ -163,9 +166,9 @@ PreviewPanel::PreviewPanel(Session* session, QWidget* parent) : Panel(parent), s
         syncLabels();
     });
 
-    connect(&sourceFrames_, &FrameBroker::frameReady, this, [this](double, const QImage& display, const QImage& scaled) {
+    connect(&sourceFrames_, &FrameBroker::frameReady, this, [this](double, const QImage& display, const QImage& output) {
         input_->setImage(display);
-        if (mode_ == OutputMode::Seek) output_->setImage(scaled.isNull() ? display : scaled);
+        if (mode_ == OutputMode::Seek) output_->setImage(output.isNull() ? display : output);
     });
     connect(&outputFrames_, &FrameBroker::frameReady, this, [this](double, const QImage& display, const QImage&) {
         if (mode_ == OutputMode::Decoded) output_->setImage(display);
@@ -211,7 +214,11 @@ void PreviewPanel::syncLabels()
     const rc::ClipInfo& clip = session_->clip();
     const FinishedOutput* finished = session_->finishedOutput();
     const QString name = QString::fromStdString(clip.name);
-    inputCaption_->setText(QString("%1 · %2×%3").arg(name).arg(clip.display.w).arg(clip.display.h));
+    QString caption = QString("%1 · %2×%3").arg(name).arg(clip.display.w).arg(clip.display.h);
+    // First, because long file names elide everything after them.
+    if (const auto& crop = session_->crop())
+        caption.prepend(QString("crop %1×%2+%3+%4 · ").arg(crop->w).arg(crop->h).arg(crop->x).arg(crop->y));
+    inputCaption_->setText(caption);
 
     const rc::Dims size = finished ? finished->size : session_->outputSize();
     outputCaption_->setText(finished ? QString("%1 · %2×%3").arg(finished->name).arg(size.w).arg(size.h)
@@ -265,9 +272,13 @@ void PreviewPanel::refresh()
     request.time = t;
     request.display = deviceSize(input_);
     request.fast = fast;
-    if (mode_ == OutputMode::Seek && !fast) {
+    if (mode_ == OutputMode::Seek) {
         const rc::Dims size = session_->outputSize();
-        request.scaled = QSize(size.w, size.h);
+        request.crop = session_->crop();
+        // Paused: the real output size, with the real scaler. Playing: just enough
+        // to show, and with no crop the input image can stand in for it.
+        if (!fast) request.output = QSize(size.w, size.h);
+        else if (request.crop) request.output = QSize(size.w, size.h).scaled(deviceSize(output_), Qt::KeepAspectRatio);
     }
     sourceFrames_.request(request);
 

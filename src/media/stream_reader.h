@@ -22,6 +22,9 @@ public:
     // Decode keyframes only, for fast thumbnails.
     void setKeyframesOnly(bool on);
 
+    // Trades in-loop filtering for speed, for analysis that never shows the frames.
+    void setFastDecode(bool on);
+
     double timeOf(const AVFrame* frame) const;
     double durationOf(const AVFrame* frame) const;
     int64_t ptsOf(const AVFrame* frame) const;

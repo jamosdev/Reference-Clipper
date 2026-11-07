@@ -109,6 +109,8 @@ void MainWindow::buildMenus()
     edit->addAction("Set in point", &session_, &Session::setInPoint);
     edit->addAction("Set out point", &session_, &Session::setOutPoint);
     edit->addAction("Remove span", &session_, &Session::removeSelectedSpan);
+    edit->addSeparator();
+    edit->addAction("Clear crop", &session_, &Session::clearCrop);
 
     auto* view = bar->addMenu("&View");
     auto* layouts = view->addMenu("Layout");
@@ -224,9 +226,11 @@ QWidget* MainWindow::buildTimelinePanel()
     connect(out, &QPushButton::clicked, &session_, &Session::setOutPoint);
     connect(removeSpan_, &QPushButton::clicked, &session_, &Session::removeSelectedSpan);
 
-    column->addWidget(ui::headerRow({ui::kicker("Source timeline"),
-                                     ui::label("drag edges to trim · drag body to move · click to seek", "caption", ui::bodyFont(11)),
-                                     ui::spacer(), spansSummary_, add, in, out, removeSpan_}));
+    // Elides rather than widening the panel past the minimum window size.
+    auto* hint = new ElidedLabel(ui::bodyFont(11), "caption");
+    hint->setText("drag edges to trim · drag body to move · click to seek · right-drag adds a span · right-click adds the scene");
+    hint->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    column->addWidget(ui::headerRow({ui::kicker("Source timeline"), hint, spansSummary_, add, in, out, removeSpan_}));
     timeline_ = new TimelineWidget(&session_, panel);
     timeline_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     column->addWidget(timeline_, 1);

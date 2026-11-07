@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "core/crop.h"
 #include "core/quality.h"
 #include "media/ffmpeg.h"
 #include "media/probe.h"
@@ -34,6 +35,13 @@ public:
 private:
     SwsContext* context_ = nullptr;
 };
+
+// `crop` is in displayed pixels. Anamorphic sources store fewer or more pixels
+// than they display, so this scales it to a rotated frame of rotatedW x rotatedH.
+Crop cropInPixels(const Crop& crop, int rotatedW, int rotatedH, Dims display);
+
+// A reference to `frame` cut down to `crop`, which is given after rotation.
+FramePtr croppedFrame(const AVFrame* frame, const Crop& crop, int rotation, Dims display);
 
 // A frame of `info`-rotated `path` near t, `width` pixels wide. With `fast` it is
 // the nearest keyframe, which is what strips and gallery cards need.

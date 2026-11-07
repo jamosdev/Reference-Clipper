@@ -4,9 +4,11 @@
 #include <QDateTime>
 #include <QString>
 #include <QVector>
+#include <optional>
 #include <vector>
 
 #include "core/config.h"
+#include "core/crop.h"
 #include "core/quality.h"
 #include "core/timeline.h"
 
@@ -25,6 +27,7 @@ struct JobSettings {
     QString resolution = "1080p";
     int presetHeight = 1080;
     rc::Dims size;
+    std::optional<rc::Crop> crop;
     int videoQuality = 70;
     int audioQuality = 70;
 };

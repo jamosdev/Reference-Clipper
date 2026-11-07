@@ -56,6 +56,25 @@ void moveTo(Span& span, double start, double clipDuration)
     span.end = span.start + len;
 }
 
+FreeRange freeRangeAround(const std::vector<Span>& spans, double t, double clipDuration, int64_t exclude)
+{
+    FreeRange range{0, clipDuration};
+    for (const Span& s : spans) {
+        if (s.id == exclude) continue;
+        if (s.end <= t) range.lower = std::max(range.lower, s.end);
+        if (s.start > t) range.upper = std::min(range.upper, s.start);
+    }
+    return range;
+}
+
+bool isClickGesture(int pixels, long long milliseconds)
+{
+    constexpr int kStillPixels = 5;
+    constexpr int kSlipPixels = 30;
+    constexpr long long kQuickMs = 160;
+    return pixels <= kStillPixels || (pixels <= kSlipPixels && milliseconds <= kQuickMs);
+}
+
 Playback beginPlayback(const std::vector<Span>& sorted, double playhead)
 {
     if (sorted.empty()) return {playhead, false, -1};

@@ -12,7 +12,7 @@ int main(int argc, char** argv)
     QApplication::setApplicationDisplayName("Reference Clipper");
     QApplication::setApplicationVersion("0.1.0");
     QApplication::setDesktopFileName("reference-clipper");
-    QApplication::setWindowIcon(QIcon::fromTheme("reference-clipper"));
+    QApplication::setWindowIcon(QIcon::fromTheme("reference-clipper", QIcon(":/icons/reference-clipper.svg")));
 
     QCommandLineParser parser;
     parser.setApplicationDescription("Mark spans in a video and encode them to one AV1/AAC MP4.");

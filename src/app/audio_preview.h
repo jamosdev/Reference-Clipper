@@ -1,5 +1,5 @@
-// Monitoring audio over the PulseAudio protocol, which PipeWire also serves.
-// Not QtMultimedia: its first device query loads its FFmpeg plugin, which probes
+// Monitoring audio: the PulseAudio protocol on Linux, which PipeWire also
+// serves, and waveOut on Windows. Not QtMultimedia: its first device query loads its FFmpeg plugin, which probes
 // hardware encoders and pulls Vulkan and the GPU driver into the process, costing
 // ~430 ms on the first Play. Connecting here takes ~15 ms.
 #pragma once

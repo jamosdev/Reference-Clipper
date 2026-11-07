@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QImage>
+#include <QPainter>
 #include <QWidget>
 
 #include "app/frame_broker.h"
@@ -23,6 +24,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    virtual void paintOverlay(QPainter&) {}  // over the picture, under the labels
 
 private:
     QImage image_;
@@ -36,7 +38,7 @@ public:
     explicit PreviewPanel(Session* session, QWidget* parent = nullptr);
 
     // For tests.
-    FrameView* inputView() const { return input_; }
+    class SourceView* inputView() const { return input_; }
     FrameView* outputView() const { return output_; }
 
 protected:
@@ -57,7 +59,7 @@ private:
     QString openOutput_;
     OutputMode mode_ = OutputMode::Black;
 
-    FrameView* input_;
+    class SourceView* input_;
     FrameView* output_;
     QWidget* inputBox_;
     QWidget* outputBox_;

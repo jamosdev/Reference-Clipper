@@ -166,7 +166,7 @@ void OutputPanel::sync()
 {
     const rc::Dims size = session_->outputSize();
     resolution_->setCurrent(session_->resolutionIndex());
-    dims_->setText(QString("%1×%2 · scale=lanczos").arg(size.w).arg(size.h));
+    dims_->setText(QString("%1×%2%3 · scale=lanczos").arg(size.w).arg(size.h).arg(session_->crop() ? " · cropped" : ""));
 
     const int vq = session_->videoQuality();
     const int aq = session_->audioQuality();

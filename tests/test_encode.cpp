@@ -8,7 +8,9 @@
 #include "media/drift.h"
 #include "media/encoder.h"
 #include "media/pcm_source.h"
+#include "media/frame_image.h"
 #include "media/probe.h"
+#include "media/scene.h"
 #include "media/stream_reader.h"
 #include "media/waveform.h"
 
@@ -66,6 +68,28 @@ std::vector<double> beepTimes(const QString& path, double duration)
         lastLoud = t;
     }
     return beeps;
+}
+
+double frameLuma(const QString& path, double t)
+{
+    StreamReader reader(path.toStdString(), AVMEDIA_TYPE_VIDEO);
+    FramePtr frame = makeFrame();
+    reader.seekBefore(t);
+    if (!reader.next(frame.get())) return -1;
+    double sum = 0;
+    const int shift = frame->format == AV_PIX_FMT_YUV420P10LE ? 2 : 0;
+    const int w = frame->width, h = frame->height;
+    for (int y = h / 4; y < 3 * h / 4; ++y) {
+        const uint8_t* row = frame->data[0] + y * frame->linesize[0];
+        for (int x = w / 4; x < 3 * w / 4; ++x)
+            sum += shift ? reinterpret_cast<const uint16_t*>(row)[x] >> shift : row[x];
+    }
+    return sum / ((h / 2) * (w / 2));
+}
+
+bool near(const std::vector<double>& cuts, double t)
+{
+    return std::any_of(cuts.begin(), cuts.end(), [t](double c) { return std::abs(c - t) < 0.02; });
 }
 
 }  // namespace
@@ -231,6 +255,183 @@ private slots:
         const EncodeResult result = encode(source, {{1, 0, 1}}, size, "odd_out.mp4");
         QVERIFY2(result.ok, result.error.c_str());
         QVERIFY((probeClip(outPath("odd_out.mp4").toStdString()).display == Dims{640, 360}));
+    }
+
+    void cropCutsTheOutputToThatRegion()
+    {
+        const QString source = fixtures::quadrants();
+        // Bottom-right quadrant, luma 220, offset away from (0, 0).
+        const Crop crop{320, 180, 320, 180};
+        EncodeRequest request;
+        request.source = source.toStdString();
+        request.spans = {{1, 0, 1}};
+        request.crop = crop;
+        request.size = outputDims(crop.size(), 0);
+        request.crf = 20;
+        request.output = outPath("cropped.mp4").toStdString();
+        std::atomic<bool> cancel{false};
+        const EncodeResult result = encodeClip(request, {}, cancel);
+        QVERIFY2(result.ok, result.error.c_str());
+        QVERIFY((probeClip(request.output).display == Dims{320, 180}));
+        const double luma = frameLuma(outPath("cropped.mp4"), 0.2);
+        QVERIFY2(std::abs(luma - 200) < 25, qPrintable(QString("luma %1, expected the brightest quadrant").arg(luma)));
+    }
+
+    void cropScalesToTheChosenPreset()
+    {
+        const QString source = fixtures::quadrants();
+        EncodeRequest request;
+        request.source = source.toStdString();
+        request.spans = {{1, 0, 1}};
+        request.crop = Crop{0, 0, 320, 180};
+        request.size = outputDims(request.crop->size(), 90);
+        QVERIFY((request.size == Dims{160, 90}));
+        request.crf = 30;
+        request.output = outPath("cropped_small.mp4").toStdString();
+        std::atomic<bool> cancel{false};
+        const EncodeResult result = encodeClip(request, {}, cancel);
+        QVERIFY2(result.ok, result.error.c_str());
+        QVERIFY((probeClip(request.output).display == Dims{160, 90}));
+    }
+
+    void cropAppliesToTheUprightPictureInBothPipelines_data()
+    {
+        QTest::addColumn<int>("rotationArg");
+        QTest::newRow("display_rotation 90") << 90;
+        QTest::newRow("display_rotation 270") << 270;
+        QTest::newRow("display_rotation 180") << 180;
+    }
+
+    void cropAppliesToTheUprightPictureInBothPipelines()
+    {
+        QFETCH(int, rotationArg);
+        const QString name = QString("quad_rot%1.mp4").arg(rotationArg);
+        const QString rotated = fixtures::make(name, {"-display_rotation", QString::number(rotationArg), "-i",
+                                                      fixtures::quadrants(), "-c", "copy"});
+        const ClipInfo clip = probeClip(rotated.toStdString());
+        QCOMPARE(clip.rotation, (360 - rotationArg) % 360);
+
+        // The CLI's autorotated picture is the reference for what is upright.
+        const QString upright = fixtures::make("upright_" + name, {"-i", rotated, "-c:v", "libx264", "-qp", "4",
+                                                                   "-preset", "veryfast", "-t", "1"});
+        const int w = clip.display.w, h = clip.display.h;
+        const Crop corners[] = {{0, 0, w / 2, h / 2}, {w / 2, 0, w / 2, h / 2}, {0, h / 2, w / 2, h / 2}, {w / 2, h / 2, w / 2, h / 2}};
+        for (const Crop& crop : corners) {
+            const QString reference = fixtures::make(
+                QString("ref_%1_%2_%3.mp4").arg(rotationArg).arg(crop.x).arg(crop.y),
+                {"-i", upright, "-vf", QString("crop=%1:%2:%3:%4").arg(crop.w).arg(crop.h).arg(crop.x).arg(crop.y),
+                 "-c:v", "libx264", "-qp", "4", "-preset", "veryfast"});
+            const double expected = frameLuma(reference, 0.1);
+
+            EncodeRequest request;
+            request.source = rotated.toStdString();
+            request.spans = {{1, 0, 0.5}};
+            request.crop = crop;
+            request.size = crop.size();
+            request.crf = 20;
+            request.output = outPath(QString("rotcrop_%1_%2_%3.mp4").arg(rotationArg).arg(crop.x).arg(crop.y)).toStdString();
+            std::atomic<bool> cancel{false};
+            const EncodeResult result = encodeClip(request, {}, cancel);
+            QVERIFY2(result.ok, result.error.c_str());
+            const double encoded = frameLuma(QString::fromStdString(request.output), 0.1);
+            QVERIFY2(std::abs(encoded - expected) < 12,
+                     qPrintable(QString("encoder crop %1,%2: luma %3, reference %4").arg(crop.x).arg(crop.y).arg(encoded).arg(expected)));
+
+            // The preview path has to show the same corner of the same picture.
+            StreamReader reader(rotated.toStdString(), AVMEDIA_TYPE_VIDEO);
+            FramePtr frame = makeFrame();
+            QVERIFY(reader.next(frame.get()));
+            FramePtr cut = croppedFrame(frame.get(), crop, clip.rotation, clip.display);
+            FrameImager imager;
+            const RgbImage image = imager.convert(cut.get(), {32, 32}, clip.rotation, ScaleQuality::Fast);
+            const uint32_t pixel = image.pixels[size_t(16) * 32 + 16];
+            const double previewLuma = 0.299 * ((pixel >> 16) & 255) + 0.587 * ((pixel >> 8) & 255) + 0.114 * (pixel & 255);
+            // RGB is full range, the luma plane is limited range.
+            const double expectedRgb = (expected - 16) * 255.0 / 219.0;
+            QVERIFY2(std::abs(previewLuma - expectedRgb) < 15,
+                     qPrintable(QString("preview crop %1,%2: %3, reference %4").arg(crop.x).arg(crop.y).arg(previewLuma).arg(expectedRgb)));
+        }
+    }
+
+    void hardCutsAreFoundToTheFrame()
+    {
+        const ClipInfo clip = probeClip(fixtures::threeScenes().toStdString());
+        std::atomic<bool> cancel{false};
+        const auto cuts = detectCuts(clip, 0, clip.duration, std::nullopt, cancel);
+        QVERIFY2(near(cuts, 3) && near(cuts, 6), qPrintable(QString("found %1 cuts").arg(cuts.size())));
+    }
+
+    void aFlashFrameIsNotACut()
+    {
+        const ClipInfo clip = probeClip(fixtures::threeScenes().toStdString());
+        std::atomic<bool> cancel{false};
+        const auto cuts = detectCuts(clip, 3.5, 5.5, std::nullopt, cancel);
+        QVERIFY(!near(cuts, 4));
+        QVERIFY(!near(cuts, 4 + 1.0 / 30));
+    }
+
+    void sceneGrowsBothWaysFromAPoint()
+    {
+        const ClipInfo clip = probeClip(fixtures::threeScenes().toStdString());
+        std::atomic<bool> cancel{false};
+        const SceneRange scene = findScene(clip, 4.5, 0, clip.duration, std::nullopt, cancel, {});
+        QVERIFY2(std::abs(scene.start - 3) < 0.02 && std::abs(scene.end - 6) < 0.02,
+                 qPrintable(QString("%1..%2").arg(scene.start).arg(scene.end)));
+    }
+
+    void sceneSaturatesAtTheClipEnds()
+    {
+        const ClipInfo clip = probeClip(fixtures::threeScenes().toStdString());
+        std::atomic<bool> cancel{false};
+        const SceneRange first = findScene(clip, 1, 0, clip.duration, std::nullopt, cancel, {});
+        QCOMPARE(first.start, 0.0);
+        QVERIFY(std::abs(first.end - 3) < 0.02);
+        const SceneRange last = findScene(clip, 8, 0, clip.duration, std::nullopt, cancel, {});
+        QVERIFY(std::abs(last.start - 6) < 0.02);
+        QCOMPARE(last.end, clip.duration);
+    }
+
+    void sceneSaturatesAtTheGivenBounds()
+    {
+        const ClipInfo clip = probeClip(fixtures::threeScenes().toStdString());
+        std::atomic<bool> cancel{false};
+        const SceneRange scene = findScene(clip, 4.5, 4, 5, std::nullopt, cancel, {});
+        QCOMPARE(scene.start, 4.0);
+        QCOMPARE(scene.end, 5.0);
+    }
+
+    void sceneReportsItsEdgesAsItGoes()
+    {
+        const ClipInfo clip = probeClip(fixtures::threeScenes().toStdString());
+        std::atomic<bool> cancel{false};
+        int updates = 0;
+        double lastWidth = 0;
+        bool grew = true;
+        findScene(clip, 4.5, 0, clip.duration, std::nullopt, cancel, [&](const SceneRange& r) {
+            ++updates;
+            grew = grew && r.end - r.start >= lastWidth;
+            lastWidth = r.end - r.start;
+        });
+        QVERIFY(updates >= 1);
+        QVERIFY(grew);
+    }
+
+    void cancelledSceneSearchStopsAtOnce()
+    {
+        const ClipInfo clip = probeClip(fixtures::threeScenes().toStdString());
+        std::atomic<bool> cancel{true};
+        const SceneRange scene = findScene(clip, 4.5, 0, clip.duration, std::nullopt, cancel, {});
+        QCOMPARE(scene.start, 4.5);
+        QCOMPARE(scene.end, 4.5);
+    }
+
+    void cropFocusesCutDetectionOnTheInset()
+    {
+        const ClipInfo clip = probeClip(fixtures::shortWithInset().toStdString());
+        std::atomic<bool> cancel{false};
+        const Crop inset{0, 186, 360, 268};
+        const auto cuts = detectCuts(clip, 0, clip.duration, inset, cancel);
+        QVERIFY2(near(cuts, 3) && near(cuts, 6), qPrintable(QString("found %1 cuts").arg(cuts.size())));
     }
 
     void spanPastTheEndIsSkipped()

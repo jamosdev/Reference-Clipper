@@ -54,7 +54,7 @@ ClipInfo probeClip(const std::string& path)
 
     ClipInfo info;
     info.path = path;
-    info.name = std::filesystem::path(path).filename().string();
+    info.name = utf8(fsPath(path).filename());
     info.rotation = rotationOf(st);
 
     AVRational sar = st->sample_aspect_ratio.num > 0 ? st->sample_aspect_ratio : par->sample_aspect_ratio;
@@ -72,7 +72,7 @@ ClipInfo probeClip(const std::string& path)
     if (info.duration <= 0) throw MediaError("could not determine duration of " + path);
 
     std::error_code ec;
-    const auto size = std::filesystem::file_size(path, ec);
+    const auto size = std::filesystem::file_size(fsPath(path), ec);
     info.sizeBytes = ec ? 0 : (long long)size;
 
     AVFormatContext* fmt = reader.format();

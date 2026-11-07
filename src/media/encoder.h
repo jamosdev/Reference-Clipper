@@ -4,9 +4,11 @@
 
 #include <atomic>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "core/crop.h"
 #include "core/quality.h"
 #include "core/timeline.h"
 #include "media/drift.h"
@@ -17,6 +19,7 @@ struct EncodeRequest {
     std::string source;
     std::vector<Span> spans;
     Dims size;
+    std::optional<Crop> crop;  // applied after rotation, before scaling to `size`
     int crf = 25;
     int audioKbps = 243;
     std::string output;

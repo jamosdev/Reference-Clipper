@@ -1,6 +1,7 @@
 // The source timeline: ruler, filmstrip, waveform, spans and playhead.
 #pragma once
 
+#include <QElapsedTimer>
 #include <QImage>
 #include <QVector>
 #include <QWidget>
@@ -14,7 +15,7 @@ class TimelineWidget : public QWidget {
 public:
     explicit TimelineWidget(Session* session, QWidget* parent = nullptr);
 
-    bool editingSpan() const { return drag_.kind == Drag::Span || drag_.kind == Drag::Left || drag_.kind == Drag::Right; }
+    bool editingSpan() const { return drag_.kind != Drag::None && drag_.kind != Drag::Head; }
     int xForTime(double seconds) const;
 
 signals:
@@ -29,7 +30,7 @@ protected:
 
 private:
     struct Drag {
-        enum Kind { None, Head, Span, Left, Right } kind = None;
+        enum Kind { None, Head, Span, Left, Right, New } kind = None;
         int64_t id = 0;
         double offset = 0;
         double length = 0;
@@ -41,6 +42,10 @@ private:
     void resetAssets();
 
     Session* session_;
+    int pressX_ = 0;
+    double pressTime_ = 0;
+    double dragTime_ = 0;
+    QElapsedTimer pressClock_;
     QVector<QImage> frames_;
     QVector<float> peaks_;
     Drag drag_;

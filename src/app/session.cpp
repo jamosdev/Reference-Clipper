@@ -54,6 +54,13 @@ Session::Session(QObject* parent) : QObject(parent)
         emit queueChanged();
     });
     connect(&jobs_, &JobQueue::finished, this, &Session::onJobFinished);
+    connect(&sceneSearch_, &SceneSearch::progress, this, &Session::applySceneRange);
+    connect(&sceneSearch_, &SceneSearch::finished, this, [this](int64_t id) {
+        if (id != sceneSpan_) return;  // a search from before the clip changed
+        sceneSpan_ = 0;
+        emit spansChanged();
+        startNextSceneSearch();
+    });
 }
 
 Session::~Session() = default;
@@ -78,7 +85,9 @@ bool Session::loadClip(const QString& path)
         return false;
     }
     pause();
+    stopSceneSearches();
     clip_ = info;
+    crop_.reset();
     spans_.clear();
     selected_ = 0;
     playhead_ = 0;
@@ -123,12 +132,13 @@ void Session::openHistoryEntry(int index)
     playhead_ = spans_.empty() ? 0 : sortedSpans().front().start;
     videoQuality_ = entry.settings.videoQuality;
     audioQuality_ = entry.settings.audioQuality;
+    crop_ = entry.settings.crop;
     for (size_t i = 0; i < std::size(kResolutions); ++i)
         if (entry.settings.resolution == kResolutions[i].label) resolution_ = int(i);
     outputName_ = entry.name;
 
     if (QFile::exists(entry.output))
-        lastOutput_ = FinishedOutput{entry.output, entry.name, spans_, rc::OutputMap(entry.segments), entry.settings.size};
+        lastOutput_ = FinishedOutput{entry.output, entry.name, spans_, crop_, rc::OutputMap(entry.segments), entry.settings.size};
 
     emit clipChanged();
     emit spansChanged();
@@ -141,8 +151,10 @@ void Session::openHistoryEntry(int index)
 void Session::closeClip()
 {
     pause();
+    stopSceneSearches();
     assets_.clear();
     clip_.reset();
+    crop_.reset();
     spans_.clear();
     selected_ = 0;
     playhead_ = 0;
@@ -254,10 +266,8 @@ void Session::selectSpan(int64_t id)
     emit selectionChanged();
 }
 
-void Session::addSpan()
+void Session::pushNewSpan(const rc::Span& span)
 {
-    if (!clip_) return;
-    const rc::Span span = rc::spanAt(nextSpanId_++, playhead_, clip_->duration, frame());
     spans_.push_back(span);
     selected_ = span.id;
     emit spansChanged();
@@ -266,10 +276,87 @@ void Session::addSpan()
     refreshFinishedOutput();
 }
 
+void Session::addSpan()
+{
+    if (!clip_) return;
+    pushNewSpan(rc::spanAt(nextSpanId_++, playhead_, clip_->duration, frame()));
+}
+
+void Session::addSpanBetween(double a, double b)
+{
+    if (!clip_) return;
+    const double start = snapped(std::clamp(std::min(a, b), 0.0, clip_->duration));
+    const double end = std::clamp(snapped(std::max(a, b)), start + frame(), std::max(start + frame(), clip_->duration));
+    pushNewSpan({nextSpanId_++, std::min(start, clip_->duration - frame()), std::min(end, clip_->duration)});
+}
+
+void Session::addSceneSpan(double t)
+{
+    if (!clip_) return;
+    t = snapped(std::clamp(t, 0.0, clip_->duration));
+    for (const rc::Span& span : sortedSpans()) {
+        if (span.contains(t)) {
+            selectSpan(span.id);
+            return;
+        }
+    }
+    const rc::FreeRange room = rc::freeRangeAround(spans_, t, clip_->duration);
+    if (room.upper - room.lower < frame()) return;
+
+    // One frame now, so the click shows at once; the search grows it from there.
+    const double start = std::clamp(t, room.lower, room.upper - frame());
+    const int64_t id = nextSpanId_++;
+    pushNewSpan({id, start, start + frame()});
+    scenesWaiting_.push_back({id, start});
+    if (!sceneSpan_) startNextSceneSearch();
+}
+
+void Session::startNextSceneSearch()
+{
+    while (!scenesWaiting_.isEmpty() && !sceneSpan_) {
+        const PendingScene next = scenesWaiting_.takeFirst();
+        const bool alive = std::any_of(spans_.begin(), spans_.end(), [&](const rc::Span& s) { return s.id == next.span; });
+        if (!alive || !clip_) continue;
+        sceneSpan_ = next.span;
+        sceneTime_ = next.time;
+        sceneSearch_.start(next.span, *clip_, next.time, rc::freeRangeAround(spans_, next.time, clip_->duration, next.span), crop_);
+    }
+}
+
+void Session::applySceneRange(int64_t id, double start, double end)
+{
+    if (id != sceneSpan_ || !clip_) return;
+    auto it = std::find_if(spans_.begin(), spans_.end(), [id](const rc::Span& s) { return s.id == id; });
+    if (it == spans_.end()) return;
+    // Neighbours may have moved since the search began.
+    const rc::FreeRange room = rc::freeRangeAround(spans_, sceneTime_, clip_->duration, id);
+    it->start = std::max(start, room.lower);
+    it->end = std::max(std::min(end, room.upper), it->start + frame());
+    emit spansChanged();
+    emit outputSettingsChanged();
+    refreshFinishedOutput();
+}
+
+void Session::abandonSceneSearch(int64_t id)
+{
+    scenesWaiting_.erase(std::remove_if(scenesWaiting_.begin(), scenesWaiting_.end(),
+                                        [id](const PendingScene& p) { return p.span == id; }),
+                         scenesWaiting_.end());
+    if (id == sceneSpan_) sceneSearch_.cancel();
+}
+
+void Session::stopSceneSearches()
+{
+    scenesWaiting_.clear();
+    sceneSearch_.stop();
+    sceneSpan_ = 0;
+}
+
 void Session::setInPoint()
 {
     auto it = std::find_if(spans_.begin(), spans_.end(), [this](const rc::Span& s) { return s.id == selected_; });
     if (it == spans_.end()) return;
+    abandonSceneSearch(it->id);
     rc::setIn(*it, playhead_, frame());
     emit spansChanged();
     emit outputSettingsChanged();
@@ -280,6 +367,7 @@ void Session::setOutPoint()
 {
     auto it = std::find_if(spans_.begin(), spans_.end(), [this](const rc::Span& s) { return s.id == selected_; });
     if (it == spans_.end()) return;
+    abandonSceneSearch(it->id);
     rc::setOut(*it, playhead_, frame(), clip_->duration);
     emit spansChanged();
     emit outputSettingsChanged();
@@ -291,6 +379,7 @@ void Session::removeSelectedSpan()
     const auto removed = std::remove_if(spans_.begin(), spans_.end(),
                                         [this](const rc::Span& s) { return s.id == selected_; });
     if (removed == spans_.end()) return;
+    abandonSceneSearch(selected_);
     spans_.erase(removed, spans_.end());
     selected_ = spans_.empty() ? 0 : sortedSpans().front().id;
     if (playing_ && spans_.empty()) pause();
@@ -304,6 +393,7 @@ void Session::editSpan(int64_t id, double start, double end, bool movePlayheadTo
 {
     auto it = std::find_if(spans_.begin(), spans_.end(), [id](const rc::Span& s) { return s.id == id; });
     if (it == spans_.end() || !clip_) return;
+    abandonSceneSearch(id);  // the user's hand wins over the search
     it->start = snapped(start);
     if (movePlayheadToStart || movePlayheadToEnd) {  // a trim: both edges on the frame grid
         it->end = std::min(clip_->duration, std::max(snapped(end), it->start + frame()));
@@ -324,8 +414,26 @@ void Session::refreshFinishedOutput()
 
 const FinishedOutput* Session::finishedOutput() const
 {
-    if (!lastOutput_ || !sameExtents(lastOutput_->spans, spans_)) return nullptr;
+    if (!lastOutput_ || lastOutput_->crop != crop_ || !sameExtents(lastOutput_->spans, spans_)) return nullptr;
     return &*lastOutput_;
+}
+
+void Session::setCrop(const rc::Crop& crop)
+{
+    if (crop_ == crop) return;
+    crop_ = crop;
+    emit cropChanged();
+    emit outputSettingsChanged();
+    refreshFinishedOutput();
+}
+
+void Session::clearCrop()
+{
+    if (!crop_) return;
+    crop_.reset();
+    emit cropChanged();
+    emit outputSettingsChanged();
+    refreshFinishedOutput();
 }
 
 void Session::setAudioSource(AudioSource source)
@@ -345,7 +453,8 @@ void Session::setResolutionIndex(int index)
 
 rc::Dims Session::outputSize() const
 {
-    return clip_ ? rc::outputDims(clip_->display, kResolutions[resolution_].height) : rc::Dims{};
+    if (!clip_) return {};
+    return rc::outputDims(crop_ ? crop_->size() : clip_->display, kResolutions[resolution_].height);
 }
 
 void Session::setVideoQuality(int quality)
@@ -421,6 +530,7 @@ void Session::encode()
     job.settings.resolution = kResolutions[resolution_].label;
     job.settings.presetHeight = kResolutions[resolution_].height;
     job.settings.size = outputSize();
+    job.settings.crop = crop_;
     job.settings.videoQuality = videoQuality_;
     job.settings.audioQuality = audioQuality_;
     job.estimatedSize = estimatedSize();
@@ -430,6 +540,7 @@ void Session::encode()
     request.source = clip_->path;
     request.spans = job.spans;
     request.size = job.settings.size;
+    request.crop = crop_;
     request.crf = rc::crfForQuality(videoQuality_);
     request.audioKbps = rc::audioKbpsForQuality(audioQuality_);
     request.output = job.output.toStdString();
@@ -518,7 +629,7 @@ void Session::onJobFinished(int id, const rc::EncodeResult& result)
     const QString name = job->name;
     const bool currentClip = clip_ && QString::fromStdString(clip_->path) == job->source;
     if (currentClip) {
-        lastOutput_ = FinishedOutput{job->output, job->name, job->spans, rc::OutputMap(result.segments), job->settings.size};
+        lastOutput_ = FinishedOutput{job->output, job->name, job->spans, job->settings.crop, rc::OutputMap(result.segments), job->settings.size};
         // A job only takes the preview if the timeline still shows what it encoded.
         if (finishedOutput()) {
             pause();
@@ -570,7 +681,7 @@ QString Session::stateText(bool editingSpan) const
     if (!clip_) return QString("%1 jobs in history").arg(history_.size());
     const rc::Dims size = outputSize();
     return QString("%1 · %2 span%3 · %4×%5")
-        .arg(playing_ ? "playing" : editingSpan ? "editing span" : "ready")
+        .arg(playing_ ? "playing" : editingSpan ? "editing span" : findingScene() ? "finding scene" : "ready")
         .arg(spans_.size())
         .arg(spans_.size() == 1 ? "" : "s")
         .arg(size.w)
